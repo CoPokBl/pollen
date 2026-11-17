@@ -4,7 +4,14 @@ import { join } from "node:path";
 import { config } from "./config.ts";
 
 mkdirSync(config.dataDir, { recursive: true });
-export const db = new DatabaseSync(join(config.dataDir, "pollen.db"));
+export const db = (() => {
+  try {
+    return new DatabaseSync(join(config.dataDir, "pollen.db"));
+  } catch (e) {
+    console.error(`Cannot open the database in ${config.dataDir}. Is that directory writable by this process (uid ${process.getuid?.()})?`);
+    throw e;
+  }
+})();
 db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
 
 const migrations: string[] = [

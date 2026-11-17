@@ -68,20 +68,26 @@ jobs:
           SIG="sha256=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$DEPLOY_WEBHOOK_SECRET" | sed 's/^.* //')"
           curl -fsS -X POST -H "Content-Type: application/json" -H "X-Hub-Signature-256: $SIG" -d "$BODY" "$DEPLOY_WEBHOOK"
 
-  arm64-smoke:
+  smoke:
     needs: image
-    runs-on: ubuntu-24.04-arm
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Run the published arm64 image and play through the game
+      - name: Run the published image on a root-owned data volume and play through the game
         env:
           REPO: ${{ github.repository }}
         run: |
-          docker run -d --name pollen --network host -e MOCK_SERBLE=1 -e GROW_SCALE=0.001 -e PORT=8090 \
+          sudo mkdir -p /srv/pollen-data && sudo chown root:root /srv/pollen-data && sudo chmod 755 /srv/pollen-data
+          docker run -d --name pollen --network host -v /srv/pollen-data:/data -e MOCK_SERBLE=1 -e GROW_SCALE=0.001 -e PORT=8090 \
             -e PUBLIC_URL=http://localhost:8090 -e SESSION_SECRET=ci ghcr.io/${REPO,,}:sha-${GITHUB_SHA::7}
-          docker exec pollen uname -m
           for i in $(seq 1 30); do curl -sf localhost:8090/healthz && break; sleep 1; done
+          docker exec pollen uname -m
+          test "$(docker exec pollen sh -c 'grep ^Uid /proc/1/status' | awk '{print $2}')" = 1000 || (echo "app is not running as node"; exit 1)
           node test/flow.mjs || (docker logs pollen; exit 1)
+          ls -ln /srv/pollen-data
