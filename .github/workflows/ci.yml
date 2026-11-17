@@ -77,9 +77,11 @@ jobs:
         with:
           node-version: 22
       - name: Run the published arm64 image and play through the game
+        env:
+          REPO: ${{ github.repository }}
         run: |
           docker run -d --name pollen --network host -e MOCK_SERBLE=1 -e GROW_SCALE=0.001 -e PORT=8090 \
-            -e PUBLIC_URL=http://localhost:8090 -e SESSION_SECRET=ci ghcr.io/${{ github.repository }}:sha-${GITHUB_SHA::7}
+            -e PUBLIC_URL=http://localhost:8090 -e SESSION_SECRET=ci ghcr.io/${REPO,,}:sha-${GITHUB_SHA::7}
           docker exec pollen uname -m
           for i in $(seq 1 30); do curl -sf localhost:8090/healthz && break; sleep 1; done
           node test/flow.mjs || (docker logs pollen; exit 1)
