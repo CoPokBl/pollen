@@ -1,0 +1,17 @@
+services:
+  pollen:
+    image: ghcr.io/OWNER/pollen:latest   # set to the repository's image
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - pollen-data:/data
+    environment:
+      PUBLIC_URL: https://pollen.example     # the public https origin, no trailing slash
+      SERBLE_CLIENT_ID: ${SERBLE_CLIENT_ID}
+      SERBLE_CLIENT_SECRET: ${SERBLE_CLIENT_SECRET}
+      SERBLE_API_KEY: ${SERBLE_API_KEY}
+      SESSION_SECRET: ${SESSION_SECRET}      # any long random string; keep it stable
+      ADMIN_USERS: pollen                    # Serble usernames that can see /api/admin/overview
+volumes:
+  pollen-data:

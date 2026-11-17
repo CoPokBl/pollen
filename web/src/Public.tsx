@@ -1,0 +1,121 @@
+import { useState } from "react";
+import { useApi, useSession, useNow, Flower, Link } from "./lib";
+import { BloomCard, RarityTag, Traits, type Bloom } from "./blooms";
+import { wildGenome, mulberry32, type Genome } from "../../shared/genome";
+
+interface Stats { gardeners: number; blooms: number; species: number; onSerble: number }
+
+const heroFlowers = (() => {
+  const r = mulberry32(20261117);
+  return [wildGenome(r, 4), { ...wildGenome(r, 6), glow: true, layers: 2 }, wildGenome(r, 4)];
+})();
+
+export function Landing() {
+  const { me } = useSession();
+  const { data: stats } = useApi<Stats>("/api/public/stats");
+  const { data: top } = useApi<Bloom[]>("/api/public/blooms?sort=top");
+  const signin = new URLSearchParams(location.search).get("signin");
+  return <div className="wrap">
+    <section className="hero">
+      <div>
+        <h1>Grow flowers nobody has ever seen.</h1>
+        <p className="lead">Pollen is a slow, friendly garden for your Serble account. Plant seeds, cross-pollinate your favourites, and breed rare hybrids. Then trade them with other gardeners as real Serble items.</p>
+        {signin && <p className="banner">{signin === "cancelled" ? "Sign-in was cancelled." : "Sign-in didn't work. Please try again."}</p>}
+        <div className="row" style={{ marginTop: 18 }}>
+          {me ? <Link to="/garden" className="btn accent big">Go to your garden</Link>
+            : <a href="/auth/login" className="btn accent big">Start growing with Serble</a>}
+          <Link to="/almanac" className="btn ghost big">Browse the Almanac</Link>
+        </div>
+        {stats && <div className="stats" style={{ marginTop: 26 }}>
+          <div><b>{stats.gardeners}</b><span>gardeners</span></div>
+          <div><b>{stats.blooms}</b><span>flowers grown</span></div>
+          <div><b>{stats.species}</b><span>species found</span></div>
+        </div>}
+      </div>
+      <div className="hero-art">
+        {heroFlowers.map((g, i) => <Flower key={i} genome={g as Genome} className="f" animate uid={"h" + i} />)}
+      </div>
+    </section>
+
+    <section className="section steps">
+      <div className="card pad"><h3><span className="num">1</span>Plant</h3><p className="muted">Free wild seeds turn up every few hours. Plant them and watch them sprout, bud and bloom in real time. Watering helps.</p></div>
+      <div className="card pad"><h3><span className="num">2</span>Breed</h3><p className="muted">Cross two flowers to make a hybrid seed. Colours blend, forms mix, and now and then something glows.</p></div>
+      <div className="card pad"><h3><span className="num">3</span>Trade</h3><p className="muted">Send a flower to Serble as an item, sell it on the Market, or bring someone else's bloom home to breed from.</p></div>
+    </section>
+
+    {top && top.length > 0 && <section className="section">
+      <div className="section-head"><h2>Finest blooms</h2><Link to="/almanac" className="linkish">see all</Link></div>
+      <div className="blooms">{top.slice(0, 12).map((b) => <BloomCard key={b.id} b={b} to={`/b/${b.id}`} extra={<div className="faint">by {b.grower}</div>} />)}</div>
+    </section>}
+  </div>;
+}
+
+interface Species { name: string; rarity: string; count: number; discoveredAt: number; discoverer: string; bloomId: string; genome: Genome | null }
+
+export function Almanac() {
+  const [tab, setTab] = useState<"species" | "recent" | "top">("species");
+  const { data: species } = useApi<Species[]>("/api/public/almanac");
+  const { data: leaders } = useApi<{ username: string; species: number }[]>("/api/public/leaders");
+  const { data: blooms } = useApi<Bloom[]>(tab === "species" ? null : `/api/public/blooms?sort=${tab}`, [tab]);
+  return <div className="wrap section">
+    <div className="section-head">
+      <h2>Almanac</h2>
+      <div className="tabs">
+        {(["species", "recent", "top"] as const).map((t) => <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
+          {t === "species" ? `Species${species ? ` · ${species.length}` : ""}` : t === "recent" ? "Just grown" : "Rarest"}</button>)}
+      </div>
+    </div>
+    {tab === "species" && <div className="side almanac-grid" style={{ gridTemplateColumns: "minmax(0,3fr) minmax(0,1fr)", alignItems: "start" }}>
+      <div className="blooms">
+        {species?.map((s) => s.genome && <BloomCard key={s.name} to={`/b/${s.bloomId}`}
+          b={{ id: s.bloomId, genome: s.genome, species: s.name, rarity: s.rarity } as Bloom}
+          extra={<div className="faint">found by {s.discoverer} · {s.count} grown</div>} />)}
+        {species?.length === 0 && <p className="muted">Nothing discovered yet. Be the first!</p>}
+      </div>
+      <div className="card pad">
+        <h3>Top discoverers</h3>
+        <table className="lb"><tbody>
+          {leaders?.map((l, i) => <tr key={l.username}><td>{i + 1}. {l.username}</td><td>{l.species}</td></tr>)}
+        </tbody></table>
+        {leaders?.length === 0 && <p className="faint">No one yet.</p>}
+      </div>
+    </div>}
+    {tab !== "species" && <div className="blooms">
+      {blooms?.map((b) => <BloomCard key={b.id} b={b} to={`/b/${b.id}`} extra={<div className="faint">by {b.grower}</div>} />)}
+    </div>}
+  </div>;
+}
+
+export function BloomPage({ id }: { id: string }) {
+  const { data: b, error } = useApi<Bloom & { parentBlooms: (Bloom & { missing?: boolean })[] | null; children: Bloom[] }>(`/api/public/bloom/${id}`, [id]);
+  const now = useNow(60_000);
+  const { config } = useSession();
+  if (error) return <div className="wrap section empty-state"><h2>Not found</h2><p>{error}</p><Link to="/almanac" className="btn">Browse the Almanac</Link></div>;
+  if (!b) return <div className="wrap section"><span className="spin" /></div>;
+  return <div className="wrap section">
+    <div className="card pad">
+      <div className="detail" style={{ gridTemplateColumns: "minmax(0, 320px) 1fr" }}>
+        <div className="art"><Flower genome={b.genome} animate uid="page" /></div>
+        <div>
+          <RarityTag r={b.rarity} />
+          <h1 style={{ fontSize: "2.2rem", marginTop: 8 }}>{b.species}</h1>
+          <p className="muted">Grown by <b>{b.grower ?? "someone"}</b>{b.state === "exported" ? ". It now lives in someone's Serble inventory as a tradable item."
+            : b.owner && b.owner !== b.grower ? `, now in ${b.owner}'s vase.` : "."}</p>
+          <Traits g={b.genome} b={b} now={now} />
+          {b.state === "exported" && <a className="btn ghost" href={config?.marketUrl} target="_blank" rel="noreferrer">Look for it on the Market</a>}
+        </div>
+      </div>
+    </div>
+    {b.parentBlooms && <div className="section">
+      <h3>Parents</h3>
+      <div className="lineage">
+        {b.parentBlooms.map((p) => p.missing ? <span key={p.id} className="faint">(composted)</span>
+          : <BloomCard key={p.id} b={p} to={`/b/${p.id}`} />)}
+      </div>
+    </div>}
+    {b.children.length > 0 && <div className="section">
+      <h3>Offspring</h3>
+      <div className="lineage">{b.children.map((c) => <BloomCard key={c.id} b={c} to={`/b/${c.id}`} />)}</div>
+    </div>}
+  </div>;
+}
