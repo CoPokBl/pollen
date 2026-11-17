@@ -15,8 +15,8 @@ const bal = (k: string) => balances.get(k) ?? (k.startsWith("User:") ? 100n * ON
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 function principal(req: FastifyRequest): { type: "App" | "User"; id: string } | null {
-  const h = req.headers.authorization ?? "";
-  const t = h.replace(/^Bearer /, "");
+  const h = String(req.headers.serbleauth ?? "");
+  const t = h.replace(/^(ApiKey|App) /, "");
   if (t === config.apiKey) return { type: "App", id: APP };
   if (t.startsWith("mock:")) return { type: "User", id: "u-" + t.slice(5) };
   return null;

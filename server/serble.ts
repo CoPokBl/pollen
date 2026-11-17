@@ -23,7 +23,9 @@ async function call<T>(path: string, init: RequestInit & { token?: string } = {}
   if (init.method === "POST" && init.body === undefined) init = { ...init, body: "{}" };
   const headers: Record<string, string> = { Accept: "application/json" };
   if (init.body) headers["Content-Type"] = "application/json";
-  headers.Authorization = `Bearer ${init.token ?? config.apiKey}`;
+  // Serble's own header rather than Authorization: it names the credential type explicitly, and
+  // proxies that manage Authorization for api.serble.net (e.g. a dev sandbox) leave it alone.
+  headers.SerbleAuth = init.token ? `App ${init.token}` : `ApiKey ${config.apiKey}`;
   const res = await fetch(config.serbleApi + path, { ...init, headers: { ...headers, ...(init.headers as any) }, signal: AbortSignal.timeout(15000) });
   const text = await res.text();
   if (!res.ok) throw new SerbleError(res.status, text, path);
