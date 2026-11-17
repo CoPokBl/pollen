@@ -16,7 +16,7 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 function principal(req: FastifyRequest): { type: "App" | "User"; id: string } | null {
   const h = String(req.headers.serbleauth ?? "");
-  const t = h.replace(/^(ApiKey|App) /, "");
+  const t = h.replace(/^(ApiKey|App|User) /, "");
   if (t === config.apiKey) return { type: "App", id: APP };
   if (t.startsWith("mock:")) return { type: "User", id: "u-" + t.slice(5) };
   return null;

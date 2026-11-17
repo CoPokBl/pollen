@@ -71,6 +71,8 @@ export const serble = {
   userBalance: (token: string) => call<{ coins: number }>("/api/v1/balance", { token }),
   userInventory: (token: string, creatorApp: string, offset = 0) =>
     call<SerbleItem[]>(`/api/v1/inventory?limit=200&offset=${offset}&creatorApp=${encodeURIComponent(creatorApp)}`, { token }),
+  /** The account behind a Serble user login token (from /api/v1/auth), not an OAuth token. */
+  accountForLogin: (loginToken: string) => call<{ id: string; username: string }>("/api/v1/account", { headers: { SerbleAuth: `User ${loginToken}` } }),
   account: (token: string) => call<{ id: string; username: string }>("/api/v1/account", { token }),
 
   // ---- OAuth

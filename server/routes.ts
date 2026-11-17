@@ -148,15 +148,39 @@ export function registerRoutes(app: FastifyInstance) {
     });
     p.post("/api/proposals/:id/cancel", async (req) => eco.cancelProposal(uid(req), str((req.params as any).id)));
 
-    p.get("/api/admin/overview", async (req, reply) => {
-      if (!config.adminUsers.includes((req as any).session.username)) return reply.code(403).send({ error: "Admins only." });
-      const day = Date.now() - 86400_000;
-      const events = db.prepare("SELECT kind, COUNT(*) n FROM events WHERE at > ? GROUP BY kind ORDER BY n DESC").all(day);
-      const active = db.prepare("SELECT COUNT(*) n FROM users WHERE last_seen > ?").get(day);
-      let appBalance = null;
-      try { appBalance = rawToCoins(BigInt(Math.round((await serble.appBalance()).coins))); } catch { /* ignore */ }
-      return { events24h: events, active24h: active, appBalance };
-    });
+  });
+
+  // Usage overview for maintainers: signed in as an admin, or with an admin's Serble login token
+  // in X-Serble-Token (so automated maintenance can read it without a browser).
+  const adminCache = new Map<string, { name: string; at: number }>();
+  app.get("/api/admin/overview", async (req, reply) => {
+    let name = (req as any).session?.username as string | undefined;
+    const tok = req.headers["x-serble-token"];
+    if (!name && typeof tok === "string" && tok.length < 2000) {
+      const hit = adminCache.get(tok);
+      if (hit && Date.now() - hit.at < 300_000) name = hit.name;
+      else {
+        try { name = (await serble.accountForLogin(tok)).username; adminCache.set(tok, { name, at: Date.now() }); } catch { /* invalid */ }
+      }
+    }
+    if (!name || !config.adminUsers.includes(name)) return reply.code(403).send({ error: "Admins only." });
+    const day = Date.now() - 86400_000, week = Date.now() - 7 * 86400_000;
+    const one = (sql: string, ...a: any[]) => (db.prepare(sql).get(...a) as { n: number }).n;
+    let appBalance = null;
+    try { appBalance = rawToCoins(BigInt(Math.round((await serble.appBalance()).coins))); } catch { /* ignore */ }
+    return {
+      users: one("SELECT COUNT(*) n FROM users"),
+      active24h: one("SELECT COUNT(*) n FROM users WHERE last_seen > ?", day),
+      active7d: one("SELECT COUNT(*) n FROM users WHERE last_seen > ?", week),
+      newUsers7d: one("SELECT COUNT(*) n FROM users WHERE created_at > ?", week),
+      blooms: one("SELECT COUNT(*) n FROM blooms"),
+      exported: one("SELECT COUNT(*) n FROM blooms WHERE state = 'exported'"),
+      species: one("SELECT COUNT(*) n FROM species"),
+      events24h: db.prepare("SELECT kind, COUNT(*) n FROM events WHERE at > ? GROUP BY kind ORDER BY n DESC").all(day),
+      events7d: db.prepare("SELECT kind, COUNT(*) n FROM events WHERE at > ? GROUP BY kind ORDER BY n DESC").all(week),
+      pendingProposals: one("SELECT COUNT(*) n FROM proposals WHERE status = 'Pending'"),
+      appBalance,
+    };
   });
 
   // Where serble.net sends the user after a transaction decision.
