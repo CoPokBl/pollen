@@ -1,17 +1,17 @@
 services:
   pollen:
-    image: ghcr.io/OWNER/pollen:latest   # set to the repository's image
+    image: ghcr.io/copokbl/pollen:latest
     restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
       - pollen-data:/data
     environment:
-      PUBLIC_URL: https://pollen.example     # the public https origin, no trailing slash
-      SERBLE_CLIENT_ID: ${SERBLE_CLIENT_ID}
+      PUBLIC_URL: https://pollinate.garden
+      SERBLE_CLIENT_ID: dbd1cb36-99b6-4c08-83a8-2214aa0e79cd
       SERBLE_CLIENT_SECRET: ${SERBLE_CLIENT_SECRET}
       SERBLE_API_KEY: ${SERBLE_API_KEY}
-      SESSION_SECRET: ${SESSION_SECRET}      # any long random string; keep it stable
-      ADMIN_USERS: pollen                    # Serble usernames that can see /api/admin/overview
+      SESSION_SECRET: ${SESSION_SECRET}
+      ADMIN_USERS: pollen
 volumes:
   pollen-data:

@@ -56,4 +56,6 @@ node test/flow.mjs           # end-to-end, against a server started with MOCK_SE
 
 ## Deploying
 
-CI tests every push and publishes `ghcr.io/<repo>:latest` and `:sha-…` from `main`. The image is a single container listening on `8080` that keeps its data in a volume at `/data`. See `compose.yaml`. If the `DEPLOY_WEBHOOK` (and `DEPLOY_WEBHOOK_SECRET`) repository secrets are set, CI calls that URL after pushing, for example a Komodo stack or deployment webhook.
+Live at **https://pollinate.garden**.
+
+CI tests every push and publishes `ghcr.io/copokbl/pollen:latest` and `:sha-…` from `main`. Production runs `:latest`, so merging to `main` deploys. The image is a single container listening on `8080` that keeps its data in a volume at `/data`. See `compose.yaml`. If the `DEPLOY_WEBHOOK` (and `DEPLOY_WEBHOOK_SECRET`) repository secrets are set, CI calls that URL after pushing, for example a Komodo stack or deployment webhook.
