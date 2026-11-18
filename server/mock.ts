@@ -6,7 +6,7 @@ import { config, ONE_COIN } from "./config.ts";
 
 const id = () => randomBytes(8).toString("hex");
 const balances = new Map<string, bigint>();          // "User:<id>" | "App:<id>"
-const items = new Map<string, { id: string; ownerType: string; ownerId: string; creatorAppId: string; name: string; description?: string; dateCreated: string }>();
+const items = new Map<string, { id: string; ownerType: string; ownerId: string; creatorAppId: string; name: string; description?: string; iconUrl?: string; dateCreated: string }>();
 const proposals = new Map<string, any>();
 const codes = new Map<string, string>();
 const APP = config.clientId;
@@ -65,10 +65,18 @@ export function registerMock(app: FastifyInstance) {
   app.post("/__mock/api/v1/items", async (req, reply) => {
     if (principal(req)?.type !== "App") return reply.code(403).send();
     const b = req.body as any;
-    const it = { id: id(), ownerType: "App", ownerId: APP, creatorAppId: APP, name: b.name, description: b.description, dateCreated: new Date().toISOString() };
+    if (b.iconUrl && !String(b.iconUrl).startsWith("https://api.files.serble.net/files/")) return reply.code(400).send("IconUrl must start with an allowed prefix.");
+    const it = { id: id(), ownerType: "App", ownerId: APP, creatorAppId: APP, name: b.name, description: b.description, iconUrl: b.iconUrl, dateCreated: new Date().toISOString() };
     items.set(it.id, it);
     return it;
   });
+  app.get("/__mock/api/v1/items/:id", async (req, reply) => {
+    const it = items.get((req.params as any).id);
+    if (!it || it.ownerType !== "App") return reply.code(404).send("Item not found.");
+    return it;
+  });
+  /** Test helper: what an item looks like on Serble. */
+  app.get("/__mock/item/:id", async (req, reply) => items.get((req.params as any).id) ?? reply.code(404).send());
   app.get("/__mock/api/v1/balance", async (req, reply) => {
     const p = principal(req);
     if (!p) return reply.code(401).send();

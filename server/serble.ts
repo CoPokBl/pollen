@@ -51,6 +51,8 @@ export interface Proposal {
 }
 
 export const serble = {
+  /** An item the app owns. */
+  getItem: (id: string) => call<SerbleItem>(`/api/v1/items/${encodeURIComponent(id)}`),
   itemFee: () => call<{ coins: string; raw: number }>("/api/v1/items/fee"),
   createItem: (body: { name: string; description?: string; iconUrl?: string }) =>
     call<SerbleItem>("/api/v1/items", { method: "POST", body: JSON.stringify(body) }),

@@ -7,6 +7,14 @@ import { serble, SerbleError } from "./serble.ts";
 import { GameError, addSeed, bloomView, type BloomRow } from "./game.ts";
 import { wildGenome, mulberry32, type Genome } from "../shared/genome.ts";
 import { randomInt } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { iconKey } from "../shared/icons.ts";
+
+// Item icons must live on Serble Files; scripts/make-icons.mjs uploads one per form and colour.
+const ICONS: Record<string, string> = JSON.parse(readFileSync(new URL("../shared/icons.json", import.meta.url), "utf8"));
+export function iconFor(g: Genome): string | undefined {
+  return ICONS[iconKey(g)];
+}
 
 const FINAL = new Set(["Approved", "Denied", "Failed", "Expired", "Cancelled"]);
 
@@ -67,11 +75,20 @@ export async function exportBloom(userId: string, bloomId: string) {
   });
   try {
     let itemId = b.item_id;
+    const iconUrl = iconFor(JSON.parse(b.genome)) ?? (config.itemIconBase ? `${config.itemIconBase}${b.id}.png` : undefined);
+    // An item minted before icons existed, which never reached a player, is replaced by one with
+    // an icon. Once an item has been delivered it is a traded asset, so it keeps its identity.
+    if (itemId && iconUrl && !everDelivered(bloomId)) {
+      try {
+        const existing = await serble.getItem(itemId);
+        if (!existing.iconUrl) itemId = null;
+      } catch { /* keep the existing item */ }
+    }
     if (!itemId) {
       const item = await serble.createItem({
         name: `${b.species}`.slice(0, 128),
         description: itemDescription(b).slice(0, 1024),
-        iconUrl: config.itemIconBase ? `${config.itemIconBase}${b.id}.png` : undefined,
+        iconUrl,
       });
       itemId = item.id;
       db.prepare("UPDATE blooms SET item_id = ? WHERE id = ?").run(itemId, bloomId);
@@ -91,6 +108,10 @@ export async function exportBloom(userId: string, bloomId: string) {
     db.prepare("UPDATE blooms SET state = 'vase' WHERE id = ? AND state = 'exporting'").run(bloomId);
     throw e;
   }
+}
+
+function everDelivered(bloomId: string) {
+  return !!db.prepare("SELECT 1 FROM proposals WHERE kind = 'export' AND status = 'Approved' AND json_extract(payload, '$.bloomId') = ?").get(bloomId);
 }
 
 /** Items from Pollen in the user's Serble inventory, matched to our blooms. */

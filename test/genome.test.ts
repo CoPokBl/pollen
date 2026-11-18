@@ -49,3 +49,18 @@ describe("coins", () => {
     expect(rawToCoins(coinsToRaw("2.5"))).toBe("2.5");
   });
 });
+
+describe("item icons", async () => {
+  const { iconKey } = await import("../shared/icons.ts");
+  const { readFileSync } = await import("node:fs");
+  const icons: Record<string, string> = JSON.parse(readFileSync(new URL("../shared/icons.json", import.meta.url), "utf8"));
+  it("every possible flower has an icon on Serble Files", () => {
+    const r = mulberry32(9);
+    let a = wildGenome(r, 6), b = wildGenome(r, 6);
+    for (let i = 0; i < 20000; i++) {
+      const g = i % 2 ? wildGenome(r, i % 7) : breed(a, b, r);
+      if (i % 3 === 0) [a, b] = [b, g];
+      expect(icons[iconKey(g)], iconKey(g)).toMatch(/^https:\/\/api\.files\.serble\.net\/files\/[a-z0-9]+\.png$/);
+    }
+  });
+});

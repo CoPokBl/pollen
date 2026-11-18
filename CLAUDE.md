@@ -16,6 +16,10 @@ name in https://pollinate.garden/ with a local `npm run build`.
   environment. To test against live Serble, mint a fresh key (`POST /api/v1/app/<id>/keys` with a user token) and delete it afterwards.
 - Edit the app with `PATCH /api/v1/app/<id>` and a body like `[{"field":"redirect_uri","newValue":"a;b"}]`.
 - Serble rejects body-less POSTs. Send `{}`.
+- Item icons must be hosted on Serble Files. `shared/icons.json` maps each flower form and colour to an icon that
+  `scripts/make-icons.mjs` uploaded as `pollen`. To get a Files token for that script: `POST https://api.serble.net/api/v1/account/authorizedApps`
+  with `SerbleAuth: User <token>` and `{"appId":"0a5cad39-9a81-4ac2-baac-0c37585fd75c","scopes":"0010000000"}` returns a code; then
+  `POST https://api.files.serble.net/account` with `{"code": ...}` returns `{"accessToken"}`. Uploads go through `s3.serble.net`.
 
 ## Working on it
 - `MOCK_SERBLE=1 GROW_SCALE=0.01 npm start` gives a fully local game against an in-memory fake Serble.

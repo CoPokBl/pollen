@@ -85,6 +85,8 @@ vase = await alice.json("GET", "/api/vase");
 assert(!vase.find((b) => b.id === target.id), "exported bloom leaves vase");
 let inv = await alice.json("GET", "/api/serble/inventory");
 assert(inv.length === 1 && inv[0].bloom.id === target.id, "item in alice's serble inventory");
+const item = await alice.json("GET", "/__mock/item/" + inv[0].itemId);
+assert(/^https:\/\/api\.files\.serble\.net\/files\/.+\.png$/.test(item.iconUrl ?? ""), "exported item has a Serble Files icon");
 
 // trade to bob (as the market would), bob imports
 const bob = client();
