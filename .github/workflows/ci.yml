@@ -88,7 +88,7 @@ jobs:
   # secrets exist.
   deploy:
     needs: smoke
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency: production
     env:
