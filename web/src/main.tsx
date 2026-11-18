@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { api, Router, useRouter, Toasts, SessionCtx, Link, Coins, type Me, type AppConfig } from "./lib";
 import Garden from "./Garden";
+import { DragProvider } from "./drag";
 import Vase from "./Vase";
 import { Landing, Almanac, BloomPage } from "./Public";
 
@@ -61,4 +62,4 @@ function Shell() {
   </SessionCtx.Provider>;
 }
 
-createRoot(document.getElementById("root")!).render(<StrictMode><Router><Toasts><Shell /></Toasts></Router></StrictMode>);
+createRoot(document.getElementById("root")!).render(<StrictMode><Router><Toasts><DragProvider><Shell /></DragProvider></Toasts></Router></StrictMode>);

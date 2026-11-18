@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, useApi, useAction, useNow, useSession, useToast, Flower, Coins, Link, Modal, toConsent } from "./lib";
 import { BloomCard, RarityTag, Traits, type Bloom } from "./blooms";
+import { useDraggable, useDropTarget, useDragging, type Payload } from "./drag";
 
 interface InvItem { itemId: string; name: string; bloom: Bloom }
 
@@ -26,6 +27,8 @@ export default function Vase() {
     refreshBalance();
   }, []);
 
+  const [burst, setBurst] = useState<{ id: string; at: number } | null>(null);
+  const dragging = useDragging();
   if (!blooms) return <div className="wrap section"><span className="spin" /></div>;
   const inVase = blooms.filter((b) => b.state === "vase");
   const travelling = blooms.filter((b) => b.state === "exporting");
@@ -36,8 +39,11 @@ export default function Vase() {
     if (!ready(b)) return toast(`${b.species} is out of pollen for now.`, true);
     setSel((s) => s.includes(b.id) ? s.filter((x) => x !== b.id) : s.length >= 2 ? [s[1], b.id] : [...s, b.id]);
   };
-  const pollinate = async () => {
-    const r = await run(() => api("/api/pollinate", { a: sel[0], b: sel[1] }), "A hybrid seed is in your pouch. Plant it to see what grows!");
+  const pollinate = async (a = sel[0], b = sel[1]) => {
+    const at = Date.now();
+    setBurst({ id: b, at });
+    setTimeout(() => setBurst((x) => (x?.at === at ? null : x)), 1100);
+    const r = await run(() => api("/api/pollinate", { a, b }), "A hybrid seed is in your pouch. Plant it to see what grows!");
     if (r) { setSel([]); setMode("view"); reload(); }
   };
 
@@ -52,7 +58,7 @@ export default function Vase() {
       {tab === "vase" && inVase.length >= 2 && (mode === "view"
         ? <button className="btn accent" onClick={() => setMode("pollinate")}>Cross-pollinate</button>
         : <><span className="faint">Pick two flowers · {sel.length}/2</span>
-          <button className="btn accent" disabled={sel.length !== 2 || busy} onClick={pollinate}>Make a hybrid seed</button>
+          <button className="btn accent" disabled={sel.length !== 2 || busy} onClick={() => pollinate()}>Make a hybrid seed</button>
           <button className="btn ghost" onClick={() => { setMode("view"); setSel([]); }}>Cancel</button></>)}
     </div>
 
@@ -61,9 +67,12 @@ export default function Vase() {
       {inVase.length === 0 ? <div className="empty-state">
         <p>Your vase is empty. Harvest a flower from your <Link to="/garden">garden</Link>, or bring one in from Serble.</p>
       </div> : <div className="blooms" style={{ marginTop: 14 }}>
-        {inVase.map((b) => <BloomCard key={b.id} b={b} selected={sel.includes(b.id)} onClick={() => toggle(b)}
-          extra={mode === "pollinate" && !ready(b) ? <div className="faint">resting</div> : b.generation > 0 ? <div className="faint">gen {b.generation}</div> : null} />)}
+        {inVase.map((b) => <VaseBloom key={b.id} b={b} selected={sel.includes(b.id)} ready={ready(b)} busy={busy}
+          burst={burst?.id === b.id ? burst.at : undefined} onTap={() => toggle(b)}
+          onPollinate={(fromId) => pollinate(fromId, b.id)}
+          extra={(mode === "pollinate" || dragging) && !ready(b) ? <div className="faint">resting</div> : b.generation > 0 ? <div className="faint">gen {b.generation}</div> : null} />)}
       </div>}
+      {inVase.length >= 2 && mode === "view" && <p className="faint" style={{ marginTop: 12 }}>Tip: drag one flower onto another to cross-pollinate them (press and hold first on a phone).</p>}
       {mode === "pollinate" && <p className="faint" style={{ marginTop: 12 }}>Hybrids inherit traits from both parents, blend their colours, and sometimes mutate. Two luminous or opaline parents are far more likely to pass those traits on. Each flower needs about 20 hours to make more pollen.</p>}
     </>}
 
@@ -118,4 +127,22 @@ function SerbleTab({ onImported }: { onImported: () => void }) {
         onClick={() => setSel((s) => s.includes(it.itemId) ? s.filter((x) => x !== it.itemId) : [...s, it.itemId])} />)}
     </div>
   </>;
+}
+
+function VaseBloom({ b, selected, ready, busy, burst, extra, onTap, onPollinate }: {
+  b: Bloom; selected: boolean; ready: boolean; busy: boolean; burst?: number; extra: React.ReactNode;
+  onTap: () => void; onPollinate: (fromId: string) => void;
+}) {
+  const drag = useDraggable({ kind: "bloom", id: b.id },
+    () => <div className="card bloom"><Flower genome={b.genome} uid={"g" + b.id} /></div>,
+    { onTap, hold: 220, disabled: !ready || busy });
+  const drop = useDropTarget(`bloom-${b.id}`, (p: Payload) => p.kind === "bloom" && p.id !== b.id && ready, (p: Payload) => p.kind === "bloom" && onPollinate(p.id));
+  return <div className={"card bloom" + (selected ? " sel" : "") + (burst ? " pollinated" : "") + drop.state} {...drop.props}
+    role="button" tabIndex={0} aria-pressed={selected} {...drag} onClick={ready ? undefined : onTap}>
+    <span className="tag"><RarityTag r={b.rarity} /></span>
+    <Flower genome={b.genome} uid={"c" + b.id} />
+    <div className="nm">{b.species}</div>
+    {extra}
+    {burst && <div className="fx fx-pollen" key={burst} aria-hidden>{Array.from({ length: 12 }, (_, i) => <i key={i} style={{ ["--i" as any]: i }} />)}</div>}
+  </div>;
 }
