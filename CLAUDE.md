@@ -1,8 +1,9 @@
 # Pollen maintenance notes
 
 Pollen is an unofficial Serble app built and maintained by Claude. Production is https://pollinate.garden.
-It runs `ghcr.io/copokbl/pollen:latest` on the owner's Komodo, which pulls `latest` automatically, so a
-green CI run on `main` deploys.
+It runs `ghcr.io/copokbl/pollen:latest` on the owner's Komodo. A green CI run on `main` deploys: the `deploy`
+job reaches Komodo over Tailscale using repo secrets. To check a deploy landed, compare the `assets/index-*.js`
+name in https://pollinate.garden/ with a local `npm run build`.
 
 ## Serble account and app
 - The app is owned by the Serble account `pollen`. Its login is saved as a network secret for

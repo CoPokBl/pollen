@@ -58,15 +58,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Tell Komodo to redeploy
-        env:
-          DEPLOY_WEBHOOK: ${{ secrets.DEPLOY_WEBHOOK }}
-          DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
-        if: env.DEPLOY_WEBHOOK != ''
-        run: |
-          BODY='{"ref":"refs/heads/main"}'
-          SIG="sha256=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$DEPLOY_WEBHOOK_SECRET" | sed 's/^.* //')"
-          curl -fsS -X POST -H "Content-Type: application/json" -H "X-Hub-Signature-256: $SIG" -d "$BODY" "$DEPLOY_WEBHOOK"
 
   smoke:
     needs: image
@@ -91,3 +82,47 @@ jobs:
           test "$(docker exec pollen sh -c 'grep ^Uid /proc/1/status' | awk '{print $2}')" = 1000 || (echo "app is not running as node"; exit 1)
           node test/flow.mjs || (docker logs pollen; exit 1)
           ls -ln /srv/pollen-data
+
+  # Redeploys production through Komodo's API once the image has passed the smoke tests. The
+  # runner joins the owner's tailnet as an ephemeral node only for this job. Skipped until the
+  # secrets exist.
+  deploy:
+    needs: smoke
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency: production
+    env:
+      HAS_SECRETS: ${{ secrets.KOMODO_API_KEY != '' && secrets.TS_AUTHKEY != '' }}
+    steps:
+      - name: Skip (Komodo secrets not configured)
+        if: env.HAS_SECRETS != 'true'
+        run: echo "Komodo deploy secrets not set; production will update on Komodo's own poll."
+      - uses: tailscale/github-action@v3
+        if: env.HAS_SECRETS == 'true'
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+      - name: Redeploy on Komodo
+        if: env.HAS_SECRETS == 'true'
+        env:
+          KOMODO_URL: ${{ secrets.KOMODO_URL }}
+          KOMODO_API_KEY: ${{ secrets.KOMODO_API_KEY }}
+          KOMODO_API_SECRET: ${{ secrets.KOMODO_API_SECRET }}
+          # "deployment:<name>" or "stack:<name>"
+          KOMODO_TARGET: ${{ vars.KOMODO_TARGET || 'deployment:pollen' }}
+        run: |
+          kind="${KOMODO_TARGET%%:*}"; name="${KOMODO_TARGET#*:}"
+          if [ "$kind" = stack ]; then body="{\"type\":\"DeployStack\",\"params\":{\"stack\":\"$name\"}}";
+          else body="{\"type\":\"Deploy\",\"params\":{\"deployment\":\"$name\"}}"; fi
+          curl -fsS --retry 3 --retry-delay 5 -X POST "${KOMODO_URL%/}/execute" \
+            -H "Content-Type: application/json" -H "X-Api-Key: $KOMODO_API_KEY" -H "X-Api-Secret: $KOMODO_API_SECRET" \
+            -d "$body"
+          echo
+      - name: Wait for production to serve this build
+        if: env.HAS_SECRETS == 'true'
+        run: |
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' https://pollinate.garden/healthz || true)
+            [ "$code" = 200 ] && { echo "pollinate.garden healthy"; exit 0; }
+            sleep 5
+          done
+          echo "pollinate.garden did not come back healthy"; exit 1
