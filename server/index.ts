@@ -36,7 +36,7 @@ app.addHook("preHandler", async (req, reply) => {
 
 app.get("/healthz", async () => {
   db.prepare("SELECT 1").get();
-  return { ok: true };
+  return { ok: true, version: process.env.GIT_SHA ?? "dev" };
 });
 
 registerAuth(app);

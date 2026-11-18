@@ -53,6 +53,7 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64
+          build-args: GIT_SHA=${{ github.sha }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -121,8 +122,8 @@ jobs:
         if: env.HAS_SECRETS == 'true'
         run: |
           for i in $(seq 1 60); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' https://pollinate.garden/healthz || true)
-            [ "$code" = 200 ] && { echo "pollinate.garden healthy"; exit 0; }
+            v=$(curl -s https://pollinate.garden/healthz | jq -r .version 2>/dev/null || true)
+            [ "$v" = "$GITHUB_SHA" ] && { echo "pollinate.garden is serving $GITHUB_SHA"; exit 0; }
             sleep 5
           done
-          echo "pollinate.garden did not come back healthy"; exit 1
+          echo "pollinate.garden is serving '${v}', expected $GITHUB_SHA"; exit 1

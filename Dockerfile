@@ -6,6 +6,8 @@ COPY . .
 RUN npm run typecheck && npm run build && npm prune --omit=dev
 
 FROM node:22-slim
+ARG GIT_SHA=dev
+ENV GIT_SHA=$GIT_SHA
 ENV NODE_ENV=production PORT=8080 DATA_DIR=/data NODE_NO_WARNINGS=1
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
