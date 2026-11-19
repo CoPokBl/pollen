@@ -107,6 +107,8 @@ const migrations: string[] = [
      return_to TEXT,
      created_at INTEGER NOT NULL
    );`,
+  // 2: fertiliser, made by composting flowers (#9)
+  `ALTER TABLE users ADD COLUMN fertiliser INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 db.exec("CREATE TABLE IF NOT EXISTS schema_version (v INTEGER NOT NULL)");

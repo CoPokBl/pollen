@@ -118,7 +118,12 @@ export function registerRoutes(app: FastifyInstance) {
       const b = req.body as any;
       return { seedId: game.pollinate(uid(req), str(b?.a), str(b?.b)) };
     });
-    p.post("/api/release", async (req) => { game.release(uid(req), str((req.body as any)?.bloomId)); return { ok: true }; });
+    p.post("/api/release", async (req) => game.release(uid(req), str((req.body as any)?.bloomId)));
+    p.post("/api/compost-blooms", async (req) => {
+      const ids = (req.body as any)?.bloomIds;
+      return game.compostBlooms(uid(req), Array.isArray(ids) ? ids.map(str) : []);
+    });
+    p.post("/api/fertilise", async (req) => game.fertilise(uid(req), num((req.body as any)?.slot)));
 
     p.get("/api/balance", async (req) => {
       const token = await userToken(req);

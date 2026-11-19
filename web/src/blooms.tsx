@@ -4,7 +4,7 @@ import { Flower, Link, fmtDuration } from "./lib";
 export interface Bloom {
   id: string; genome: Genome; species: string; rarity: string; score: number; origin: string; generation: number;
   parents: string[] | null; state: string; itemId: string | null; pollenReadyAt: number | null; createdAt: number;
-  grower?: string; owner?: string | null;
+  grower?: string; owner?: string | null; speciesCount?: number;
 }
 
 export function RarityTag({ r }: { r: string }) {
@@ -23,7 +23,7 @@ export function BloomCard({ b, selected, onClick, to, extra }: { b: Bloom; selec
     aria-pressed={selected} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onClick?.())}>{inner}</div>;
 }
 
-const CENTRES = ["Button", "Seeded", "Starburst", "Target"];
+export const CENTRES = ["Button", "Seeded", "Starburst", "Target"];
 export function Traits({ g, b, now }: { g: Genome; b?: Bloom; now?: number }) {
   const sw = (h: number, s: number, l: number) => <span className="swatch" style={{ background: `hsl(${h} ${s}% ${l}%)` }} />;
   return <dl className="traits">

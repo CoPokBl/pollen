@@ -1,15 +1,47 @@
 import { useEffect, useState } from "react";
 import { api, useApi, useAction, useNow, useSession, useToast, Flower, Coins, Link, Modal, toConsent } from "./lib";
-import { BloomCard, RarityTag, Traits, type Bloom } from "./blooms";
+import { BloomCard, RarityTag, Traits, CENTRES, type Bloom } from "./blooms";
+import { PATTERNS, RARITIES, colorName } from "../../shared/genome";
 import { useDraggable, useDropTarget, useDragging, type Payload } from "./drag";
 
 interface InvItem { itemId: string; name: string; bloom: Bloom }
+interface VaseData { blooms: Bloom[]; fertiliser: number; compostYield: Record<string, number> }
+
+// Sorting and grouping (#10). Choices are remembered per device.
+const SORTS = {
+  newest: { label: "Newest", cmp: (a: Bloom, b: Bloom) => b.createdAt - a.createdAt },
+  oldest: { label: "Oldest", cmp: (a: Bloom, b: Bloom) => a.createdAt - b.createdAt },
+  rarity: { label: "Rarest", cmp: (a: Bloom, b: Bloom) => b.score - a.score || b.createdAt - a.createdAt },
+  global: { label: "Globally rarest", cmp: (a: Bloom, b: Bloom) => (a.speciesCount ?? 1) - (b.speciesCount ?? 1) || b.score - a.score },
+  generation: { label: "Generation", cmp: (a: Bloom, b: Bloom) => b.generation - a.generation || b.createdAt - a.createdAt },
+  pollen: { label: "Pollen ready soonest", cmp: (a: Bloom, b: Bloom) => (a.pollenReadyAt ?? 0) - (b.pollenReadyAt ?? 0) || b.score - a.score },
+} as const;
+const RARITY_ORDER = [...RARITIES].reverse() as string[];
+const GROUPS = {
+  none: { label: "No grouping", key: () => "", order: (_k: string) => 0 },
+  rarity: { label: "Rarity", key: (b: Bloom) => b.rarity, order: (k: string) => RARITY_ORDER.indexOf(k) },
+  colour: { label: "Colour", key: (b: Bloom) => colorName(b.genome), order: () => 0 },
+  pattern: { label: "Pattern", key: (b: Bloom) => PATTERNS[b.genome.pattern] || "Plain", order: () => 0 },
+  centre: { label: "Centre", key: (b: Bloom) => CENTRES[b.genome.center] ?? "Other", order: () => 0 },
+} as const;
+type SortKey = keyof typeof SORTS;
+type GroupKey = keyof typeof GROUPS;
+function usePref<T extends string>(key: string, fallback: T, allowed: readonly string[]): [T, (v: T) => void] {
+  const [v, setV] = useState<T>(() => {
+    try { const s = localStorage.getItem(key); if (s && allowed.includes(s)) return s as T; } catch { /* storage unavailable */ }
+    return fallback;
+  });
+  return [v, (nv: T) => { setV(nv); try { localStorage.setItem(key, nv); } catch { /* ignore */ } }];
+}
 
 export default function Vase() {
   const { config, refreshBalance } = useSession();
-  const { data: blooms, reload } = useApi<Bloom[]>("/api/vase");
+  const { data: vase, reload } = useApi<VaseData>("/api/vase");
+  const blooms = vase?.blooms;
+  const [sort, setSort] = usePref<SortKey>("pollen.vase.sort", "newest", Object.keys(SORTS));
+  const [group, setGroup] = usePref<GroupKey>("pollen.vase.group", "none", Object.keys(GROUPS));
   const [tab, setTab] = useState<"vase" | "serble">("vase");
-  const [mode, setMode] = useState<"view" | "pollinate">("view");
+  const [mode, setMode] = useState<"view" | "pollinate" | "compost">("view");
   const [sel, setSel] = useState<string[]>([]);
   const [open, setOpen] = useState<Bloom | null>(null);
   const { busy, run } = useAction();
@@ -34,7 +66,18 @@ export default function Vase() {
   const travelling = blooms.filter((b) => b.state === "exporting");
   const ready = (b: Bloom) => !b.pollenReadyAt || b.pollenReadyAt <= now;
 
+  const yieldOf = (b: Bloom) => vase?.compostYield[b.rarity] ?? 1;
+  const compost = async (ids: string[]) => {
+    const list = inVase.filter((b) => ids.includes(b.id));
+    const precious = list.filter((b) => b.score >= 4);
+    if (precious.length && !confirm(precious.length === 1 ? `Compost your ${precious[0].rarity} ${precious[0].species}? This can't be undone.`
+      : `Compost ${list.length} flowers, including ${precious.length} Rare or better? This can't be undone.`)) return;
+    const r = await run(() => api<{ composted: number; gained: number }>("/api/compost-blooms", { bloomIds: ids }),
+      (r) => `Composted ${r.composted} flower${r.composted > 1 ? "s" : ""} into ${r.gained} fertiliser. Use it in your garden to speed up growth.`);
+    if (r) { setSel([]); setMode("view"); setOpen(null); reload(); }
+  };
   const toggle = (b: Bloom) => {
+    if (mode === "compost") return setSel((s) => s.includes(b.id) ? s.filter((x) => x !== b.id) : [...s, b.id]);
     if (mode !== "pollinate") return setOpen(b);
     if (!ready(b)) return toast(`${b.species} is out of pollen for now.`, true);
     setSel((s) => s.includes(b.id) ? s.filter((x) => x !== b.id) : s.length >= 2 ? [s[1], b.id] : [...s, b.id]);
@@ -55,24 +98,44 @@ export default function Vase() {
         <button role="tab" aria-selected={tab === "serble"} className={tab === "serble" ? "on" : ""} onClick={() => setTab("serble")}>On Serble</button>
       </div>
       <span className="spacer" />
-      {tab === "vase" && inVase.length >= 2 && (mode === "view"
-        ? <button className="btn accent" onClick={() => setMode("pollinate")}>Cross-pollinate</button>
-        : <><span className="faint">Pick two flowers · {sel.length}/2</span>
-          <button className="btn accent" disabled={sel.length !== 2 || busy} onClick={() => pollinate()}>Make a hybrid seed</button>
-          <button className="btn ghost" onClick={() => { setMode("view"); setSel([]); }}>Cancel</button></>)}
+      {tab === "vase" && mode === "view" && <>
+        {inVase.length >= 2 && <button className="btn accent" onClick={() => setMode("pollinate")}>Cross-pollinate</button>}
+        {inVase.length > 0 && <button className="btn ghost" onClick={() => setMode("compost")}>Compost…</button>}
+        <CompostBin onDropBloom={(id) => compost([id])} />
+      </>}
+      {tab === "vase" && mode === "pollinate" && <><span className="faint">Pick two flowers · {sel.length}/2</span>
+        <button className="btn accent" disabled={sel.length !== 2 || busy} onClick={() => pollinate()}>Make a hybrid seed</button>
+        <button className="btn ghost" onClick={() => { setMode("view"); setSel([]); }}>Cancel</button></>}
+      {tab === "vase" && mode === "compost" && <><span className="faint">{sel.length ? `${sel.length} selected · +${inVase.filter((b) => sel.includes(b.id)).reduce((n, b) => n + yieldOf(b), 0)} fertiliser` : "Pick flowers to compost"}</span>
+        <button className="btn accent" disabled={!sel.length || busy} onClick={() => compost(sel)}>Compost</button>
+        <button className="btn ghost" onClick={() => { setMode("view"); setSel([]); }}>Cancel</button></>}
     </div>
+    {tab === "vase" && inVase.length > 0 && <div className="row vase-tools">
+      <label className="faint">Sort <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
+        {Object.entries(SORTS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></label>
+      <label className="faint">Group <select value={group} onChange={(e) => setGroup(e.target.value as GroupKey)}>
+        {Object.entries(GROUPS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></label>
+      <span className="spacer" />
+      <span className="pill" title="Made by composting flowers. Drag the sack onto a growing plant in your garden.">🌱 {vase?.fertiliser ?? 0} fertiliser</span>
+    </div>}
 
     {tab === "vase" && <>
       {travelling.length > 0 && <div className="banner">{travelling.length} flower{travelling.length > 1 ? "s are" : " is"} waiting for your approval on serble.net.</div>}
       {inVase.length === 0 ? <div className="empty-state">
         <p>Your vase is empty. Harvest a flower from your <Link to="/garden">garden</Link>, or bring one in from Serble.</p>
-      </div> : <div className="blooms" style={{ marginTop: 14 }}>
-        {inVase.map((b) => <VaseBloom key={b.id} b={b} selected={sel.includes(b.id)} ready={ready(b)} busy={busy}
-          burst={burst?.id === b.id ? burst.at : undefined} onTap={() => toggle(b)}
-          onPollinate={(fromId) => pollinate(fromId, b.id)}
-          extra={(mode === "pollinate" || dragging) && !ready(b) ? <div className="faint">resting</div> : b.generation > 0 ? <div className="faint">gen {b.generation}</div> : null} />)}
-      </div>}
-      {inVase.length >= 2 && mode === "view" && <p className="faint" style={{ marginTop: 12 }}>Tip: drag one flower onto another to cross-pollinate them (press and hold first on a phone).</p>}
+      </div> : grouped(inVase, sort, group).map(([name, list]) => <div key={name || "all"} className="vase-group">
+        {name && <h3 className="group-head">{name} <span className="pill">{list.length}</span></h3>}
+        <div className="blooms">
+          {list.map((b) => <VaseBloom key={b.id} b={b} selected={sel.includes(b.id)} ready={ready(b)} busy={busy} dragOnlyCompost={mode === "compost"}
+            burst={burst?.id === b.id ? burst.at : undefined} onTap={() => toggle(b)}
+            onPollinate={(fromId) => pollinate(fromId, b.id)}
+            extra={mode === "compost" ? <div className="faint">+{yieldOf(b)} fertiliser</div>
+              : (mode === "pollinate" || dragging) && !ready(b) ? <div className="faint">resting</div>
+              : sort === "global" ? <div className="faint">{b.speciesCount ?? 1} ever grown</div>
+              : b.generation > 0 ? <div className="faint">gen {b.generation}</div> : null} />)}
+        </div>
+      </div>)}
+      {inVase.length >= 2 && mode === "view" && <p className="faint" style={{ marginTop: 12 }}>Tip: drag one flower onto another to cross-pollinate them, or onto the compost bin to turn it into fertiliser (press and hold first on a phone).</p>}
       {mode === "pollinate" && <p className="faint" style={{ marginTop: 12 }}>Hybrids inherit traits from both parents, blend their colours, and sometimes mutate. Two luminous or opaline parents are far more likely to pass those traits on. Each flower needs about 20 hours to make more pollen.</p>}
     </>}
 
@@ -93,10 +156,10 @@ export default function Vase() {
             <Link to={`/b/${open.id}`} className="btn ghost">Public page</Link>
           </div>
           <p className="faint" style={{ marginTop: 10 }}>Sending turns this flower into a Serble item you can sell or trade on the <a href={config?.marketUrl} target="_blank" rel="noreferrer">Market</a>. Whoever holds it can bring it back into their own Pollen garden to breed.</p>
-          <button className="linkish" style={{ fontSize: ".85rem" }} disabled={busy} onClick={async () => {
-            if (!confirm(`Compost your ${open.species}? This can't be undone.`)) return;
-            if (await run(() => api("/api/release", { bloomId: open.id }), "Composted.")) { setOpen(null); reload(); }
-          }}>Compost this flower</button>
+          <button className="linkish" style={{ fontSize: ".85rem" }} disabled={busy} onClick={() => {
+            if (open.score < 4 && !confirm(`Compost your ${open.species} into ${yieldOf(open)} fertiliser? This can't be undone.`)) return;
+            compost([open.id]);
+          }}>Compost this flower (+{yieldOf(open)} fertiliser)</button>
         </div>
       </div>
     </Modal>}
@@ -129,20 +192,42 @@ function SerbleTab({ onImported }: { onImported: () => void }) {
   </>;
 }
 
-function VaseBloom({ b, selected, ready, busy, burst, extra, onTap, onPollinate }: {
+function VaseBloom({ b, selected, ready, busy, burst, extra, onTap, onPollinate, dragOnlyCompost }: {
   b: Bloom; selected: boolean; ready: boolean; busy: boolean; burst?: number; extra: React.ReactNode;
-  onTap: () => void; onPollinate: (fromId: string) => void;
+  onTap: () => void; onPollinate: (fromId: string) => void; dragOnlyCompost?: boolean;
 }) {
+  // A resting flower can't pollinate, but can still be dragged to the compost bin.
   const drag = useDraggable({ kind: "bloom", id: b.id },
     () => <div className="card bloom"><Flower genome={b.genome} uid={"g" + b.id} /></div>,
-    { onTap, hold: 220, disabled: !ready || busy });
-  const drop = useDropTarget(`bloom-${b.id}`, (p: Payload) => p.kind === "bloom" && p.id !== b.id && ready, (p: Payload) => p.kind === "bloom" && onPollinate(p.id));
+    { onTap, hold: 220, disabled: busy || dragOnlyCompost });
+  const drop = useDropTarget(`bloom-${b.id}`, (p: Payload) => p.kind === "bloom" && p.id !== b.id && ready && !dragOnlyCompost,
+    (p: Payload) => p.kind === "bloom" && onPollinate(p.id));
   return <div className={"card bloom" + (selected ? " sel" : "") + (burst ? " pollinated" : "") + drop.state} {...drop.props}
-    role="button" tabIndex={0} aria-pressed={selected} {...drag} onClick={ready ? undefined : onTap}>
+    role="button" tabIndex={0} aria-pressed={selected} {...drag} onClick={dragOnlyCompost ? onTap : undefined}>
     <span className="tag"><RarityTag r={b.rarity} /></span>
     <Flower genome={b.genome} uid={"c" + b.id} />
     <div className="nm">{b.species}</div>
     {extra}
     {burst && <div className="fx fx-pollen" key={burst} aria-hidden>{Array.from({ length: 12 }, (_, i) => <i key={i} style={{ ["--i" as any]: i }} />)}</div>}
   </div>;
+}
+
+function grouped(list: Bloom[], sort: SortKey, group: GroupKey): [string, Bloom[]][] {
+  const sorted = [...list].sort(SORTS[sort].cmp);
+  if (group === "none") return [["", sorted]];
+  const g = GROUPS[group];
+  const map = new Map<string, Bloom[]>();
+  for (const b of sorted) { const k = g.key(b); map.set(k, [...(map.get(k) ?? []), b]); }
+  return [...map].sort((a, b) => g.order(a[0]) - g.order(b[0]) || b[1].length - a[1].length || a[0].localeCompare(b[0]));
+}
+
+const BIN = <svg viewBox="0 0 48 48" aria-hidden><path d="M10 14h28l-3 28H13L10 14Z" fill="#7a9a58" stroke="#3d5a2a" strokeWidth="2" strokeLinejoin="round"/>
+  <path d="M7 14h34" stroke="#3d5a2a" strokeWidth="3" strokeLinecap="round"/><path d="M19 9h10" stroke="#3d5a2a" strokeWidth="3" strokeLinecap="round"/>
+  <path d="M18 22c3 4 9 4 12 0M18 30c3 4 9 4 12 0" stroke="#d9e8c5" strokeWidth="2" fill="none" strokeLinecap="round"/></svg>;
+
+function CompostBin({ onDropBloom }: { onDropBloom: (id: string) => void }) {
+  const dragging = useDragging();
+  const drop = useDropTarget("compost-bin", (p: Payload) => p.kind === "bloom", (p: Payload) => p.kind === "bloom" && onDropBloom(p.id));
+  return <div className={"bin" + drop.state + (dragging?.payload.kind === "bloom" ? " bin-open" : "")} {...drop.props}
+    title="Drag a flower here to compost it into fertiliser" aria-label="Compost bin">{BIN}</div>;
 }

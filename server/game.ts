@@ -26,6 +26,7 @@ export function growTimeMs(origin: string, generation: number): number {
 
 export interface UserRow {
   id: string; username: string; created_at: number; last_seen: number; free_seed_at: number; free_seeds: number;
+  fertiliser?: number;
 }
 
 export function upsertUser(id: string, username: string): UserRow {
@@ -196,10 +197,52 @@ export function pollinate(userId: string, aId: string, bId: string) {
   });
 }
 
+/** Fertiliser gained by composting a flower, by rarity. */
+export const COMPOST_YIELD: Record<string, number> = { Common: 1, Uncommon: 2, Rare: 3, Epic: 5, Legendary: 8 };
+/** Fertiliser one application costs, and how much of the plant's total growth it skips. */
+export const FERTILISE_COST = 3;
+const FERTILISE_BOOST = 0.25;
+
+/** Compost flowers from the vase into fertiliser. Returns the fertiliser gained. */
+export function compostBlooms(userId: string, bloomIds: string[]) {
+  const ids = [...new Set(bloomIds)].slice(0, 200);
+  if (!ids.length) throw new GameError("Pick some flowers to compost.");
+  return tx(() => {
+    let gained = 0, n = 0;
+    for (const id of ids) {
+      const b = db.prepare("SELECT rarity FROM blooms WHERE id = ? AND owner_id = ? AND state = 'vase'").get(id, userId) as { rarity: string } | undefined;
+      if (!b) continue;
+      db.prepare("DELETE FROM blooms WHERE id = ?").run(id);
+      gained += COMPOST_YIELD[b.rarity] ?? 1;
+      n++;
+    }
+    if (!n) throw new GameError("Those flowers aren't in your vase.");
+    db.prepare("UPDATE users SET fertiliser = fertiliser + ? WHERE id = ?").run(gained, userId);
+    logEvent(userId, "release", { n, gained });
+    return { composted: n, gained, fertiliser: fertiliserOf(userId) };
+  });
+}
+
+/** Back-compat single-flower compost. */
 export function release(userId: string, bloomId: string) {
-  const r = db.prepare("DELETE FROM blooms WHERE id = ? AND owner_id = ? AND state = 'vase'").run(bloomId, userId);
-  if (!r.changes) throw new GameError("That flower isn't in your vase.");
-  logEvent(userId, "release");
+  return compostBlooms(userId, [bloomId]);
+}
+
+export const fertiliserOf = (userId: string) =>
+  (db.prepare("SELECT fertiliser FROM users WHERE id = ?").get(userId) as { fertiliser: number } | undefined)?.fertiliser ?? 0;
+
+/** Spend fertiliser to skip a quarter of a growing plant's total growth time. */
+export function fertilise(userId: string, slot: number) {
+  return tx(() => {
+    const p = db.prepare("SELECT * FROM plants WHERE user_id = ? AND slot = ?").get(userId, slot) as PlantRow | undefined;
+    if (!p) throw new GameError("Nothing is growing there.");
+    if (plantProgress(p) >= 1) throw new GameError("It's already in bloom.");
+    const r = db.prepare("UPDATE users SET fertiliser = fertiliser - ? WHERE id = ? AND fertiliser >= ?").run(FERTILISE_COST, userId, FERTILISE_COST);
+    if (!r.changes) throw new GameError(`You need ${FERTILISE_COST} fertiliser. Compost some flowers from your vase to make more.`);
+    db.prepare("UPDATE plants SET boost_ms = boost_ms + ? WHERE user_id = ? AND slot = ?").run(Math.round(p.grow_ms * FERTILISE_BOOST), userId, slot);
+    logEvent(userId, "fertilise");
+    return { fertiliser: fertiliserOf(userId) };
+  });
 }
 
 // ------------------------------------------------------------------ views
@@ -236,10 +279,12 @@ export function gardenView(userId: string) {
       const g = JSON.parse(s.genome) as Genome;
       return { id: s.id, origin: s.origin, generation: s.generation, hint: { hue: g.hue, sat: g.sat, lum: g.lum }, parents: s.parents ? JSON.parse(s.parents) : null };
     });
-  return { plots, seeds, freeSeeds: freeSeedState(u, now), serverNow: now };
+  return { plots, seeds, freeSeeds: freeSeedState(u, now), serverNow: now, fertiliser: u.fertiliser ?? 0, fertiliseCost: FERTILISE_COST };
 }
 
 export function vaseView(userId: string) {
-  const rows = db.prepare("SELECT * FROM blooms WHERE owner_id = ? ORDER BY created_at DESC").all(userId) as unknown as BloomRow[];
-  return rows.map((b) => bloomView(b));
+  // speciesCount: how many of this species have ever been grown, for sorting by global rarity (#10).
+  const rows = db.prepare(`SELECT b.*, COALESCE(s.count, 1) AS species_count FROM blooms b LEFT JOIN species s ON s.name = b.species
+                           WHERE b.owner_id = ? ORDER BY b.created_at DESC`).all(userId) as unknown as (BloomRow & { species_count: number })[];
+  return { blooms: rows.map((b) => ({ ...bloomView(b), speciesCount: b.species_count })), fertiliser: fertiliserOf(userId), compostYield: COMPOST_YIELD };
 }

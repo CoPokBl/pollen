@@ -58,7 +58,7 @@ await sleep(7000);  // GROW_SCALE=0.001 -> 1.5h ~ 5.4s
 g = await alice.json("GET", "/api/garden");
 assert(g.plots.slice(0, 4).every((p) => p.plant.stage === "bloom"), "plants bloom");
 for (let i = 0; i < 4; i++) await alice.json("POST", "/api/harvest", { slot: i });
-let vase = await alice.json("GET", "/api/vase");
+let vase = (await alice.json("GET", "/api/vase")).blooms;
 assert(vase.length === 4, "4 blooms in vase");
 const { seedId } = await alice.json("POST", "/api/pollinate", { a: vase[0].id, b: vase[1].id });
 assert(seedId, "pollinate gives a hybrid seed");
@@ -77,11 +77,11 @@ assert((await alice.json("GET", "/api/balance")).coins === "90", "balance 90");
 const target = vase[2];
 let ex = await alice.json("POST", "/api/export", { bloomId: target.id });
 await alice.consent(ex.consentUrl, "deny");
-vase = await alice.json("GET", "/api/vase");
+vase = (await alice.json("GET", "/api/vase")).blooms;
 assert(vase.find((b) => b.id === target.id).state === "vase", "denied export returns to vase");
 ex = await alice.json("POST", "/api/export", { bloomId: target.id });
 await alice.consent(ex.consentUrl, "approve");
-vase = await alice.json("GET", "/api/vase");
+vase = (await alice.json("GET", "/api/vase")).blooms;
 assert(!vase.find((b) => b.id === target.id), "exported bloom leaves vase");
 let inv = await alice.json("GET", "/api/serble/inventory");
 assert(inv.length === 1 && inv[0].bloom.id === target.id, "item in alice's serble inventory");
@@ -96,7 +96,7 @@ inv = await bob.json("GET", "/api/serble/inventory");
 assert(inv.length === 1, "bob sees item");
 const im = await bob.json("POST", "/api/import", { itemIds: [inv[0].itemId] });
 await bob.consent(im.consentUrl, "approve");
-const bv = await bob.json("GET", "/api/vase");
+const bv = (await bob.json("GET", "/api/vase")).blooms;
 assert(bv.length === 1 && bv[0].id === target.id && bv[0].itemId === inv[0].itemId, "bob imported the bloom");
 const pub = await bob.json("GET", "/api/public/bloom/" + target.id);
 assert(pub.owner === "bob" && pub.grower === "alice", "public page shows grower and owner");
@@ -111,4 +111,28 @@ const svg = await fetch(BASE + `/bloom/${target.id}.svg`);
 assert(svg.ok && svg.headers.get("content-type").includes("svg"), "svg image");
 const cross = await fetch(BASE + "/api/seeds/claim", { method: "POST", headers: { origin: "https://evil.example" } });
 assert(cross.status === 403, "cross-site post refused");
+// compost (#9): alice composts a flower into fertiliser, then fertilises a growing plant
+const v0 = await alice.json("GET", "/api/vase");
+const victim = v0.blooms.find((b) => b.state === "vase");
+const c = await alice.json("POST", "/api/compost-blooms", { bloomIds: [victim.id] });
+assert(c.composted === 1 && c.gained === v0.compostYield[victim.rarity], "compost gives fertiliser by rarity");
+const notMine = await (await fetch(BASE + "/api/compost-blooms", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bloomIds: [bv[0].id] }) })).status;
+assert(notMine === 401, "compost needs sign-in");
+// give alice enough fertiliser by composting more of her flowers
+const more = (await alice.json("GET", "/api/vase")).blooms.filter((b) => b.state === "vase").map((b) => b.id);
+const c2 = await alice.json("POST", "/api/compost-blooms", { bloomIds: more });
+const gAl = await alice.json("GET", "/api/garden");
+assert(gAl.fertiliser === c.gained + c2.gained, "fertiliser total adds up");
+const seed = gAl.seeds[0];
+const slot = gAl.plots.find((p) => !p.plant).slot;
+await alice.json("POST", "/api/plant", { seedId: seed.id, slot });
+const before = (await alice.json("GET", "/api/garden")).plots[slot].plant.readyAt;
+if (gAl.fertiliser >= gAl.fertiliseCost) {
+  const f = await alice.json("POST", "/api/fertilise", { slot });
+  const after = (await alice.json("GET", "/api/garden")).plots[slot].plant.readyAt;
+  assert(f.fertiliser === gAl.fertiliser - gAl.fertiliseCost && after < before, "fertilising spends fertiliser and speeds growth");
+} else {
+  const r = await alice.json("POST", "/api/fertilise", { slot }).catch((e) => e.message);
+  assert(String(r).includes("need"), "fertilising without enough is refused");
+}
 console.log("ALL PASSED");

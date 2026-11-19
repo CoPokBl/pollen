@@ -6,10 +6,11 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 export type Payload =
   | { kind: "seed"; id: string }
   | { kind: "can" }
+  | { kind: "fertiliser" }
   | { kind: "bloom"; id: string };
 
 interface Target { accepts: (p: Payload) => boolean; onDrop: (p: Payload) => void }
-interface DragState { payload: Payload; ghost: ReactNode; x: number; y: number; over: string | null }
+interface DragState { payload: Payload; ghost: ReactNode; x: number; y: number; over: string | null; tilt: number }
 
 const Ctx = createContext<{
   drag: DragState | null;
@@ -31,14 +32,23 @@ export function DragProvider({ children }: { children: ReactNode }) {
   };
 
   const start = useCallback((payload: Payload, ghost: ReactNode, x: number, y: number) => {
-    setDrag({ payload, ghost, x, y, over: null });
+    setDrag({ payload, ghost, x, y, over: null, tilt: 0 });
     navigator.vibrate?.(8);
   }, []);
 
   useEffect(() => {
     if (!drag) return;
+    // The held item swings with sideways speed and settles when the pointer rests (#11).
+    let last = { x: dragRef.current?.x ?? 0, t: performance.now() };
+    let settle: number | undefined;
     const move = (e: PointerEvent) => {
-      setDrag((d) => d && { ...d, x: e.clientX, y: e.clientY, over: targetAt(e.clientX, e.clientY) });
+      const t = performance.now();
+      const vx = (e.clientX - last.x) / Math.max(8, t - last.t);   // px per ms
+      last = { x: e.clientX, t };
+      const tilt = Math.max(-28, Math.min(28, vx * 14));
+      setDrag((d) => d && { ...d, x: e.clientX, y: e.clientY, over: targetAt(e.clientX, e.clientY), tilt: d.tilt * 0.4 + tilt * 0.6 });
+      clearTimeout(settle);
+      settle = window.setTimeout(() => setDrag((d) => d && { ...d, tilt: 0 }), 90);
     };
     const up = (e: PointerEvent) => {
       const d = dragRef.current;
@@ -59,13 +69,16 @@ export function DragProvider({ children }: { children: ReactNode }) {
       removeEventListener("pointerup", up);
       removeEventListener("pointercancel", cancel);
       removeEventListener("touchmove", noScroll);
+      clearTimeout(settle);
       document.body.classList.remove("dragging");
     };
   }, [!!drag]);
 
   return <Ctx.Provider value={{ drag, start, targets }}>
     {children}
-    {drag && <div className="drag-ghost" style={{ left: drag.x, top: drag.y }} aria-hidden>{drag.ghost}</div>}
+    {drag && <div className="drag-ghost" style={{ left: drag.x, top: drag.y }} aria-hidden>
+      <div className="drag-swing" style={{ transform: `rotate(${drag.tilt.toFixed(1)}deg)` }}>{drag.ghost}</div>
+    </div>}
   </Ctx.Provider>;
 }
 

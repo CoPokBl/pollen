@@ -244,3 +244,18 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 @keyframes wiggle { 25% { transform: rotate(-4deg); } 75% { transform: rotate(4deg); } }
 @media (prefers-reduced-motion: reduce) { .fx, .art.pop, .bloom.pollinated { animation: none !important; } .fx { display: none; } }
 @media (hover: hover) { [data-draggable="hold"] { cursor: grab; } }
+
+/* ---------- vase tools, compost, fertiliser */
+.vase-tools { margin: 4px 0 6px; }
+.vase-tools select { font: inherit; font-weight: 700; color: var(--ink); background: var(--card); border: 1.5px solid var(--line); border-radius: 999px; padding: 4px 10px; margin-left: 4px; }
+.vase-group { margin-top: 14px; }
+.group-head { font-size: 1rem; display: flex; align-items: center; gap: 8px; margin: 6px 0 8px; }
+.bin { width: 46px; height: 46px; flex: none; border-radius: 12px; transition: transform .15s; }
+.bin svg { width: 100%; height: 100%; display: block; }
+.bin.bin-open { transform: scale(1.15) rotate(-6deg); }
+.sack { position: relative; width: 48px; }
+.sack.empty { opacity: .45; }
+.sack .count { position: absolute; right: -4px; bottom: -2px; background: var(--ink); color: var(--paper); font-size: .7rem; font-weight: 800; border-radius: 99px; padding: 0 6px; }
+.sack[data-draggable] { touch-action: none; }
+.drag-swing { transform-origin: 50% 15%; transition: transform .18s cubic-bezier(.3, 1.5, .5, 1); }
+@media (prefers-reduced-motion: reduce) { .drag-swing { transform: none !important; } }
