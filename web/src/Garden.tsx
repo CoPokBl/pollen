@@ -14,6 +14,7 @@ interface GardenData {
   seeds: Seed[];
   freeSeeds: { available: number; nextAt: number | null };
   pending: { id: string; kind: string; consentUrl: string; createdAt: number }[];
+  serverNow?: number;
 }
 
 // A plant whose genome is still hidden is drawn with a neutral stand-in that carries its colour.
@@ -39,7 +40,11 @@ export default function Garden() {
   const [harvested, setHarvested] = useState<{ id: string; species: string; rarity: string; discovered: boolean; genome: Genome } | null>(null);
   const { busy, run } = useAction();
   const toast = useToast();
-  const now = useNow(1000);
+  const clientNow = useNow(1000);
+  // All timers come from the server's clock; correct for any difference with this device's clock.
+  const [skew, setSkew] = useState(0);
+  useEffect(() => { if (data?.serverNow) setSkew(Date.now() - data.serverNow); }, [data?.serverNow]);
+  const now = clientNow - skew;
 
   // Refresh state when a plant crosses a stage boundary or the tab comes back.
   useEffect(() => {
@@ -83,9 +88,23 @@ export default function Garden() {
     flash(slot, "plant");
     await act("/api/plant", { seedId, slot });
   };
-  const waterPlot = async (slot: number) => {
+  // Watering is instant on screen and never blocks other plots: update this plant optimistically
+  // (one watering used, 15% growth boost, its own cooldown started), then confirm in the background.
+  const waterPlot = (slot: number) => {
     flash(slot, "water");
-    await act("/api/water", { slot }, "Watered. It's growing faster.");
+    setData((d) => d && {
+      ...d,
+      plots: d.plots.map((p) => p.slot !== slot || !p.plant ? p : {
+        ...p,
+        plant: {
+          ...p.plant,
+          waters: p.plant.waters + 1,
+          readyAt: p.plant.readyAt - Math.round(p.plant.growMs * 0.15),
+          canWaterAt: p.plant.waters + 1 >= 3 ? null : Date.now() - skew + 60_000, // placeholder until the reload
+        },
+      }),
+    });
+    api("/api/water", { slot }).then(reload, (e) => { toast((e as Error).message, true); reload(); });
   };
   const harvest = async (slot: number, genome: Genome) => {
     const r = await run(() => api("/api/harvest", { slot }));

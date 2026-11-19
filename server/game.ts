@@ -226,7 +226,8 @@ export function gardenView(userId: string) {
         readyAt: p.planted_at + p.grow_ms - p.boost_ms,
         growMs: p.grow_ms,
         waters: p.waters,
-        canWaterAt: p.waters >= 3 || progress >= 1 ? null : (p.last_water_at ? p.last_water_at + WATER_COOLDOWN * config.growScale : now),
+        // 0 means "now", so clients don't compare against their own (possibly skewed) clock.
+        canWaterAt: p.waters >= 3 || progress >= 1 ? null : (p.last_water_at ? Math.max(0, p.last_water_at + WATER_COOLDOWN * config.growScale) : 0),
       },
     };
   });
@@ -235,7 +236,7 @@ export function gardenView(userId: string) {
       const g = JSON.parse(s.genome) as Genome;
       return { id: s.id, origin: s.origin, generation: s.generation, hint: { hue: g.hue, sat: g.sat, lum: g.lum }, parents: s.parents ? JSON.parse(s.parents) : null };
     });
-  return { plots, seeds, freeSeeds: freeSeedState(u, now) };
+  return { plots, seeds, freeSeeds: freeSeedState(u, now), serverNow: now };
 }
 
 export function vaseView(userId: string) {
