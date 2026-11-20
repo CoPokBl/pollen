@@ -140,6 +140,7 @@ export default function Vase() {
         </div>
       </div>)}
       {inVase.length >= 2 && mode === "view" && <p className="faint" style={{ marginTop: 12 }}>Tip: drag one flower onto another to cross-pollinate them, or onto the compost bin to turn it into fertiliser (press and hold first on a phone).</p>}
+      {mode === "pollinate" && sel.length === 2 && <CrossOdds a={sel[0]} b={sel[1]} />}
       {mode === "pollinate" && <p className="faint" style={{ marginTop: 12 }}>Hybrids inherit traits from both parents, blend their colours, and sometimes mutate. Two luminous or opaline parents are far more likely to pass those traits on. Each flower needs about 20 hours to make more pollen.</p>}
     </>}
 
@@ -264,5 +265,26 @@ function FeatureSlot({ slot, bloom, onFeature, onOpen }: { slot: number; bloom?:
       <Flower genome={bloom.genome} uid={"f" + bloom.id} />
       <button className="slot-x" aria-label="Remove from featured" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onFeature(bloom.id, null); }}>×</button>
     </> : <span className="slot-star" aria-hidden>★</span>}
+  </div>;
+}
+
+interface Odds { luminous: number; opaline: number; both: number; rarity: Record<string, number>; shapes: Record<string, number> }
+
+/** What a cross is likely to produce, so breeding can be aimed at a goal (#15). */
+function CrossOdds({ a, b }: { a: string; b: string }) {
+  const { data } = useApi<Odds>(`/api/pollinate/odds?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`, [a, b]);
+  if (!data) return null;
+  const fmt = (n: number) => (n >= 10 ? Math.round(n) : n) + "%";
+  const rare = (["Legendary", "Epic", "Rare"] as const).filter((r) => data.rarity[r]);
+  const topShapes = Object.entries(data.shapes).sort((x, y) => y[1] - x[1]).slice(0, 3);
+  return <div className="card pad odds" aria-live="polite">
+    <b>Likely offspring</b>
+    <div className="odds-row">
+      <span>Luminous <b>{fmt(data.luminous)}</b></span>
+      <span>Opaline <b>{fmt(data.opaline)}</b></span>
+      <span>Both <b>{fmt(data.both)}</b></span>
+      {rare.map((r) => <span key={r}>{r} <b>{fmt(data.rarity[r])}</b></span>)}
+    </div>
+    <div className="faint">Form: {topShapes.map(([k, v]) => `${k} ${fmt(v)}`).join(" · ")}</div>
   </div>;
 }

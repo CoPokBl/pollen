@@ -31,6 +31,8 @@ export default function Garden() {
   const { config, refreshBalance } = useSession();
   const { data, reload, setData } = useApi<GardenData>("/api/garden");
   const [picked, setPicked] = useState<string | null>(null);
+  // Tap a tool to pick it up, then tap plants to use it (an alternative to dragging, #16).
+  const [armed, setArmed] = useState<"can" | "fertiliser" | null>(null);
   // Short-lived visual effects on a plot: a seed dropping in, or a splash of water.
   const [fx, setFx] = useState<Record<number, { kind: "plant" | "water"; at: number }>>({});
   const flash = (slot: number, kind: "plant" | "water") => {
@@ -139,16 +141,21 @@ export default function Garden() {
     <div className="section">
       <div className="section-head">
         <h2>Your garden</h2>
-        <span className="faint">{picked ? "Now tap an empty plot to plant." : dragging ? "" : "Drag a seed onto a plot, or tap one then the other."}</span>
-        <span className="spacer" />
-        <FertiliserSack count={data.fertiliser ?? 0} cost={data.fertiliseCost ?? 3} />
-        <WateringCan />
+        <span className="faint">{armed === "can" ? "Tap plants to water them. Tap the can again to put it down."
+          : armed === "fertiliser" ? "Tap a growing plant to fertilise it. Tap the sack again to put it down."
+          : picked ? "Now tap an empty plot to plant." : dragging ? "" : "Drag a seed onto a plot, or tap one then the other."}</span>
+      </div>
+      <div className={"tools" + (armed ? " armed" : "")}>
+        <FertiliserSack count={data.fertiliser ?? 0} cost={data.fertiliseCost ?? 3} armed={armed === "fertiliser"}
+          onTap={() => { setPicked(null); setArmed((a) => a === "fertiliser" ? null : "fertiliser"); }} />
+        <WateringCan armed={armed === "can"} onTap={() => { setPicked(null); setArmed((a) => a === "can" ? null : "can"); }} />
       </div>
       <div className="plots">
         {data.plots.map(({ slot, plant }) => <Plot key={slot} slot={slot} plant={plant} now={now} busy={busy} picked={picked} fx={fx[slot]}
           onEmptyTap={() => picked ? plantInto(slot) : data.seeds[0] ? setPicked(data.seeds[0].id) : toast("Your pouch is empty. Gather free seeds or buy a packet.")}
           onSeedDrop={(id) => plantInto(slot, id)}
           onWater={() => waterPlot(slot)}
+          armed={armed}
           canFertilise={(data.fertiliser ?? 0) >= (data.fertiliseCost ?? 3)}
           onFertilise={() => fertilisePlot(slot)}
           onHarvest={() => plant?.genome && harvest(slot, plant.genome)}
@@ -224,36 +231,31 @@ const CAN = <svg viewBox="0 0 64 48" aria-hidden><path d="M14 18h26v20a6 6 0 0 1
   <path d="M40 24l16-12 3 4-15 14" fill="#5f9ea0" stroke="#2f5f60" strokeWidth="2" strokeLinejoin="round"/>
   <path d="M18 18c0-8 18-8 18 0" fill="none" stroke="#2f5f60" strokeWidth="3"/><circle cx="58" cy="13" r="3" fill="#2f5f60"/></svg>;
 
-function WateringCan() {
-  const toast = useToast();
-  const drag = useDraggable({ kind: "can" }, () => <div className="can tilt">{CAN}</div>,
-    { onTap: () => toast("Drag the watering can onto a growing plant.") });
-  return <div className="can" role="button" tabIndex={0} aria-label="Watering can: drag onto a plant" title="Drag onto a growing plant" {...drag}>{CAN}</div>;
+function WateringCan({ armed, onTap }: { armed: boolean; onTap: () => void }) {
+  const drag = useDraggable({ kind: "can" }, () => <div className="can tilt">{CAN}</div>, { onTap });
+  return <div className={"can" + (armed ? " picked-up" : "")} role="button" tabIndex={0} aria-pressed={armed}
+    aria-label="Watering can: drag over plants, or tap it and then tap plants" title="Drag over plants, or tap then tap plants" {...drag}>{CAN}</div>;
 }
 
 const SACK = <svg viewBox="0 0 48 48" aria-hidden><path d="M13 16c-3 8-4 18-1 24 2 4 22 4 24 0 3-6 2-16-1-24Z" fill="#b08a5a" stroke="#6b4f2c" strokeWidth="2" strokeLinejoin="round"/>
   <path d="M14 16c3-5 17-5 20 0" fill="none" stroke="#6b4f2c" strokeWidth="2"/><path d="M17 11l3 5M31 11l-3 5" stroke="#6b4f2c" strokeWidth="2" strokeLinecap="round"/>
   <path d="M24 34c0-6 4-9 7-9-1 5-3 8-7 9Zm0 0c0-5-3-7-6-7 1 4 3 6 6 7Z" fill="#5f9a4a"/></svg>;
 
-function FertiliserSack({ count, cost }: { count: number; cost: number }) {
+function FertiliserSack({ count, cost, armed, onTap }: { count: number; cost: number; armed: boolean; onTap: () => void }) {
   const toast = useToast();
   const enough = count >= cost;
-  const drag = useDraggable({ kind: "fertiliser" }, () => <div className="can tilt">{SACK}</div>, {
-    disabled: !enough,
-    onTap: () => toast(enough ? `Drag the sack onto a growing plant to skip a quarter of its growing time (uses ${cost}).`
-      : `You have ${count} fertiliser; ${cost} are needed. Compost flowers in your vase to make more.`),
-  });
-  return <div className={"can sack" + (enough ? "" : " empty")} role="button" tabIndex={0} {...drag}
+  const drag = useDraggable({ kind: "fertiliser" }, () => <div className="can tilt">{SACK}</div>, { disabled: !enough, onTap });
+  return <div className={"can sack" + (enough ? "" : " empty") + (armed ? " picked-up" : "")} role="button" tabIndex={0} aria-pressed={armed} {...drag}
     onClick={enough ? undefined : () => toast(`You have ${count} fertiliser; ${cost} are needed. Compost flowers in your vase to make more.`)}
-    aria-label={`Fertiliser: ${count}. Drag onto a growing plant.`} title={`Fertiliser: ${count} (uses ${cost})`}>
+    aria-label={`Fertiliser: ${count}. Drag onto a growing plant, or tap it and then tap a plant.`} title={`Fertiliser: ${count} (uses ${cost} per plant; skips a quarter of the growing time)`}>
     {SACK}<span className="count">{count}</span>
   </div>;
 }
 
-function Plot({ slot, plant, now, busy, picked, fx, onEmptyTap, onSeedDrop, onWater, onHarvest, onCompost, canFertilise, onFertilise }: {
+function Plot({ slot, plant, now, busy, picked, fx, onEmptyTap, onSeedDrop, onWater, onHarvest, onCompost, canFertilise, onFertilise, armed }: {
   slot: number; plant: Plant | null; now: number; busy: boolean; picked: string | null; fx?: { kind: string; at: number };
   onEmptyTap: () => void; onSeedDrop: (id: string) => void; onWater: () => void; onHarvest: () => void; onCompost: () => void;
-  canFertilise: boolean; onFertilise: () => void;
+  canFertilise: boolean; onFertilise: () => void; armed?: "can" | "fertiliser" | null;
 }) {
   const ready = plant?.stage === "bloom";
   const waterIn = !plant || plant.canWaterAt === null ? null : Math.max(0, plant.canWaterAt - now);
@@ -273,7 +275,13 @@ function Plot({ slot, plant, now, busy, picked, fx, onEmptyTap, onSeedDrop, onWa
   </div>;
 
   const progress = ready ? 1 : Math.max(0.03, Math.min(1, 1 - (plant.readyAt - now) / plant.growMs));
-  return <div className={"card plot" + (ready ? " ready-glow" : "") + drop.state} {...drop.props}>
+  const toolUsable = armed === "can" ? canWater : armed === "fertiliser" ? !ready && canFertilise : false;
+  const useTool = armed && !ready ? (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    if (armed === "can" && canWater) onWater();
+    else if (armed === "fertiliser" && canFertilise) onFertilise();
+  } : undefined;
+  return <div className={"card plot" + (ready ? " ready-glow" : "") + drop.state + (armed ? (toolUsable ? " tool-ok" : " tool-no") : "")} {...drop.props} onClick={useTool}>
     <div className={"art" + (fx?.kind === "plant" ? " pop" : "")} onClick={ready && !busy ? onHarvest : undefined} style={ready ? { cursor: "pointer" } : undefined}>
       <Flower genome={plant.genome ?? placeholder(plant.hint)} stage={plant.stage} soil animate={ready} uid={"p" + slot} />
     </div>

@@ -64,3 +64,20 @@ describe("item icons", async () => {
     }
   });
 });
+
+describe("inheritance (#15)", async () => {
+  const { crossOdds, RARE_TRAIT_INHERITANCE } = await import("../shared/genome.ts");
+  const base = wildGenome(mulberry32(11));
+  const lum = { ...base, glow: true, iridescent: false }, opa = { ...base, glow: false, iridescent: true };
+  const both = { ...base, glow: true, iridescent: true }, plain = { ...base, glow: false, iridescent: false };
+  it("rare traits pass on at the advertised rates", () => {
+    const close = (x: number, p: number) => expect(Math.abs(x - p * 100)).toBeLessThan(3.5);
+    close(crossOdds(lum, plain).luminous, RARE_TRAIT_INHERITANCE[1]);
+    close(crossOdds(lum, lum).luminous, RARE_TRAIT_INHERITANCE[2]);
+    close(crossOdds(plain, plain).luminous, RARE_TRAIT_INHERITANCE[0]);
+  });
+  it("breeding toward both traits pays off", () => {
+    expect(crossOdds(lum, opa).both).toBeGreaterThan(9);      // ~12%: a long shot from one of each
+    expect(crossOdds(both, both).both).toBeGreaterThan(65);   // ~72%: breed two carriers of both
+  });
+});

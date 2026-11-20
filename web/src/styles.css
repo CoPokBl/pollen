@@ -281,3 +281,35 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .bio { white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: 4px; }
 .bio-edit textarea { width: 100%; font: inherit; border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 10px; background: var(--card); color: var(--ink); resize: vertical; }
 @media (max-width: 560px) { .profile-head { flex-direction: column; } .avatar { width: 72px; height: 72px; } }
+
+/* the watering can pours wherever it goes (#17) */
+.pour { position: absolute; left: 6px; top: 6px; width: 30px; height: 70px; pointer-events: none; }
+.pour i { position: absolute; top: 0; left: calc(var(--i) * 4px); width: 5px; height: 8px; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  background: #6fb7d9; opacity: 0; animation: pour .55s linear infinite; animation-delay: calc(var(--i) * 80ms); }
+@keyframes pour { 0% { opacity: .95; transform: translateY(0); } 100% { opacity: 0; transform: translateY(64px); } }
+@media (prefers-reduced-motion: reduce) { .pour { display: none; } }
+
+/* garden tools stay in reach while scrolling (#16) */
+.tools { position: sticky; top: calc(60px + env(safe-area-inset-top)); z-index: 15; display: flex; gap: 14px; justify-content: flex-end; align-items: center;
+  margin: -6px 0 10px; padding: 6px 10px; border-radius: 16px; background: color-mix(in srgb, var(--paper) 85%, transparent); backdrop-filter: blur(6px); width: fit-content; margin-left: auto; }
+.can.picked-up { transform: translateY(-4px) rotate(-12deg); filter: drop-shadow(0 6px 8px rgb(0 0 0 / .2)); }
+.tools.armed { box-shadow: 0 0 0 2px var(--accent); }
+.plot.tool-ok { outline: 2px dashed var(--accent); outline-offset: 2px; cursor: pointer; }
+.plot.tool-no { opacity: .6; }
+
+/* Phones: navigation lives in the sticky header, not a fixed bottom bar. Firefox for Android moves
+   bottom-fixed bars while its toolbar collapses and expands (#7). */
+:root { --header-h: 60px; }
+@media (max-width: 720px) {
+  :root { --header-h: 104px; }
+  .bottom-nav { display: none !important; }
+  main { padding-bottom: 24px !important; }
+  .top .wrap { flex-wrap: wrap; height: auto; row-gap: 0; padding-top: 6px; }
+  .top .wrap > .brand { height: 48px; }
+  .top .nav { display: flex !important; order: 10; width: 100%; justify-content: space-around; padding: 0 0 6px; }
+  .top .nav a { flex: 1; text-align: center; padding: 6px 4px; }
+  .toasts { bottom: 24px !important; }
+}
+.tools { top: calc(var(--header-h) + env(safe-area-inset-top)); }
+.odds { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.odds-row { display: flex; gap: 8px 18px; flex-wrap: wrap; }

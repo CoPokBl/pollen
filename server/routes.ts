@@ -5,7 +5,7 @@ import { requireUser, userToken } from "./auth.ts";
 import * as game from "./game.ts";
 import * as eco from "./economy.ts";
 import { serble, SerbleError } from "./serble.ts";
-import { renderFlower, validGenome } from "../shared/genome.ts";
+import { renderFlower, validGenome, crossOdds } from "../shared/genome.ts";
 
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 const num = (v: unknown) => (typeof v === "number" ? v : Number(v));
@@ -123,6 +123,13 @@ export function registerRoutes(app: FastifyInstance) {
     p.post("/api/pollinate", async (req) => {
       const b = req.body as any;
       return { seedId: game.pollinate(uid(req), str(b?.a), str(b?.b)) };
+    });
+    p.get("/api/pollinate/odds", async (req) => {
+      const q = req.query as { a?: string; b?: string };
+      const get = (id: string) => db.prepare("SELECT genome FROM blooms WHERE id = ? AND owner_id = ?").get(id, uid(req)) as { genome: string } | undefined;
+      const a = get(str(q.a)), b = get(str(q.b));
+      if (!a || !b) throw new game.GameError("Pick two of your own flowers.");
+      return crossOdds(JSON.parse(a.genome), JSON.parse(b.genome));
     });
     p.post("/api/release", async (req) => game.release(uid(req), str((req.body as any)?.bloomId)));
     p.post("/api/compost-blooms", async (req) => {

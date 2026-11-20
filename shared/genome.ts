@@ -91,6 +91,30 @@ function blendHue(a: number, b: number, t: number): number {
   return wrapHue(a + d * t);
 }
 
+/** Chance a child shows luminous/opaline when 0, 1 or 2 parents have it. Strong enough that
+ * breeding, not luck, is the way to rare flowers (#15). */
+export const RARE_TRAIT_INHERITANCE = [0.01, 0.35, 0.85] as const;
+
+/** Estimate what a cross is likely to produce, by sampling it. */
+export function crossOdds(a: Genome, b: Genome, samples = 3000) {
+  const r = mulberry32(hashString(JSON.stringify([a, b])));
+  const rarity: Record<string, number> = {};
+  const shapes: Record<string, number> = {};
+  let glow = 0, iri = 0, both = 0;
+  for (let i = 0; i < samples; i++) {
+    const c = breed(a, b, r);
+    if (c.glow) glow++;
+    if (c.iridescent) iri++;
+    if (c.glow && c.iridescent) both++;
+    const rr = rarityOf(c);
+    rarity[rr] = (rarity[rr] ?? 0) + 1;
+    shapes[SHAPES[c.shape]] = (shapes[SHAPES[c.shape]] ?? 0) + 1;
+  }
+  const pct = (n: number) => Math.round((n / samples) * 1000) / 10;
+  const map = (o: Record<string, number>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, pct(v)]));
+  return { luminous: pct(glow), opaline: pct(iri), both: pct(both), rarity: map(rarity), shapes: map(shapes) };
+}
+
 /** Cross two parents. Each gene comes from a parent, a blend, or (rarely) a mutation. */
 export function breed(a: Genome, b: Genome, r: Rng): Genome {
   const wild = wildGenome(r, 1.5);
@@ -110,7 +134,7 @@ export function breed(a: Genome, b: Genome, r: Rng): Genome {
   };
   const rareTrait = (k: "glow" | "iridescent") => {
     const n = (a[k] ? 1 : 0) + (b[k] ? 1 : 0);
-    return r() < [0.012, 0.15, 0.55][n];
+    return r() < RARE_TRAIT_INHERITANCE[n];
   };
   return {
     hue: wrapHue(hueGene("hue")),

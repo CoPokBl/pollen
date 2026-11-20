@@ -50,22 +50,51 @@ export function DragProvider({ children }: { children: ReactNode }) {
       clearTimeout(settle);
       settle = window.setTimeout(() => setDrag((d) => d && { ...d, tilt: 0 }), 90);
     };
+    // Per frame: scroll the page when the pointer nears the top or bottom edge (#16), and let the
+    // watering can pour: water lands just below the spout, and a plant it rests on for a moment gets
+    // watered without letting go (#17).
+    let pos = { x: dragRef.current?.x ?? 0, y: dragRef.current?.y ?? 0 };
+    const trackPos = (e: PointerEvent) => { pos = { x: e.clientX, y: e.clientY }; };
+    const poured = new Set<string>();
+    let pourKey: string | null = null, pourSince = 0, raf = 0;
+    const tick = () => {
+      const header = document.querySelector(".top")?.getBoundingClientRect().bottom ?? 0;
+      const top = header + 70, bottom = innerHeight - 80;
+      const dy = pos.y < top ? -(top - pos.y) / 8 : pos.y > bottom ? (pos.y - bottom) / 8 : 0;
+      if (dy) {
+        const before = scrollY;
+        scrollBy(0, Math.max(-10, Math.min(10, dy)));
+        if (scrollY !== before) setDrag((d) => d && { ...d, over: targetAt(pos.x, pos.y) });
+      }
+      const d = dragRef.current;
+      if (d?.payload.kind === "can") {
+        const k = targetAt(pos.x, pos.y + 46) ?? targetAt(pos.x, pos.y);
+        const t = performance.now();
+        if (k !== pourKey) { pourKey = k; pourSince = t; }
+        else if (k && !poured.has(k) && t - pourSince > 280) { poured.add(k); targets.current.get(k)?.onDrop(d.payload); }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
     const up = (e: PointerEvent) => {
       const d = dragRef.current;
       const key = targetAt(e.clientX, e.clientY);
       setDrag(null);
-      if (d && key) targets.current.get(key)?.onDrop(d.payload);
+      if (d && key && !poured.has(key)) targets.current.get(key)?.onDrop(d.payload);
     };
     const cancel = () => setDrag(null);
     // While dragging, a touch must not scroll the page.
     const noScroll = (e: TouchEvent) => e.preventDefault();
     addEventListener("pointermove", move);
+    addEventListener("pointermove", trackPos);
     addEventListener("pointerup", up);
     addEventListener("pointercancel", cancel);
     addEventListener("touchmove", noScroll, { passive: false });
     document.body.classList.add("dragging");
     return () => {
       removeEventListener("pointermove", move);
+      removeEventListener("pointermove", trackPos);
+      cancelAnimationFrame(raf);
       removeEventListener("pointerup", up);
       removeEventListener("pointercancel", cancel);
       removeEventListener("touchmove", noScroll);
@@ -78,6 +107,7 @@ export function DragProvider({ children }: { children: ReactNode }) {
     {children}
     {drag && <div className="drag-ghost" style={{ left: drag.x, top: drag.y }} aria-hidden>
       <div className="drag-swing" style={{ transform: `rotate(${drag.tilt.toFixed(1)}deg)` }}>{drag.ghost}</div>
+      {drag.payload.kind === "can" && <div className="pour">{Array.from({ length: 7 }, (_, i) => <i key={i} style={{ ["--i" as any]: i }} />)}</div>}
     </div>}
   </Ctx.Provider>;
 }
