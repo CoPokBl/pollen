@@ -80,6 +80,12 @@ export function registerRoutes(app: FastifyInstance) {
                        ORDER BY s.discovered_at DESC LIMIT 500`).all().map((r: any) => ({ ...r, genome: r.genome ? JSON.parse(r.genome) : null }));
   });
 
+  app.get("/api/public/u/:username", async (req, reply) => {
+    const p = game.profileView(str((req.params as any).username).slice(0, 255));
+    if (!p) return reply.code(404).send({ error: "No gardener by that name." });
+    return p;
+  });
+
   app.get("/api/public/leaders", async () => {
     return db.prepare(`SELECT u.username, COUNT(*) AS species FROM species s JOIN users u ON u.id = s.first_user_id
                        GROUP BY s.first_user_id ORDER BY species DESC LIMIT 20`).all();
@@ -123,6 +129,12 @@ export function registerRoutes(app: FastifyInstance) {
       const ids = (req.body as any)?.bloomIds;
       return game.compostBlooms(uid(req), Array.isArray(ids) ? ids.map(str) : []);
     });
+    p.post("/api/feature", async (req) => {
+      const b = req.body as any;
+      game.feature(uid(req), str(b?.bloomId), b?.slot === null || b?.slot === undefined ? null : num(b.slot));
+      return { ok: true };
+    });
+    p.post("/api/profile", async (req) => ({ bio: game.setBio(uid(req), str((req.body as any)?.bio)) }));
     p.post("/api/fertilise", async (req) => game.fertilise(uid(req), num((req.body as any)?.slot)));
 
     p.get("/api/balance", async (req) => {

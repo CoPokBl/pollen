@@ -98,8 +98,12 @@ export const SessionCtx = createContext<{ me: Me | null | undefined; config: App
 export const useSession = () => useContext(SessionCtx);
 
 // ------------------------------------------------------------------ flower
-export function Flower({ genome, stage, soil, animate, className, uid }: { genome: Genome; stage?: Stage; soil?: boolean; animate?: boolean; className?: string; uid?: string }) {
-  const html = useMemo(() => renderFlower(genome, { stage, soil, animate, uid }), [genome, stage, soil, animate, uid]);
+export function Flower({ genome, stage, soil, animate, className, uid, head }: { genome: Genome; stage?: Stage; soil?: boolean; animate?: boolean; className?: string; uid?: string; head?: boolean }) {
+  // `head` crops to the flower head (as the item icons do), for avatars and small tiles.
+  const html = useMemo(() => {
+    const svg = renderFlower(genome, { stage, soil, animate, uid });
+    return head ? svg.replace('viewBox="0 0 200 220"', 'viewBox="25 38 150 150"') : svg;
+  }, [genome, stage, soil, animate, uid, head]);
   return <div className={className} aria-hidden dangerouslySetInnerHTML={{ __html: html }} />;
 }
 

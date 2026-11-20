@@ -62,6 +62,21 @@ let vase = (await alice.json("GET", "/api/vase")).blooms;
 assert(vase.length === 4, "4 blooms in vase");
 const { seedId } = await alice.json("POST", "/api/pollinate", { a: vase[0].id, b: vase[1].id });
 assert(seedId, "pollinate gives a hybrid seed");
+// profiles and featured flowers (#13)
+await alice.json("POST", "/api/feature", { bloomId: vase[0].id, slot: 0 });
+await alice.json("POST", "/api/feature", { bloomId: vase[1].id, slot: 1 });
+await alice.json("POST", "/api/feature", { bloomId: vase[2].id, slot: 0 });   // swaps: vase[0] moves out
+let prof = await alice.json("GET", "/api/public/u/ALICE");
+assert(prof.username === "alice" && prof.featured.map((b) => b.id).join() === [vase[2].id, vase[1].id].join(), "featured slots swap and show on the profile");
+await alice.json("POST", "/api/profile", { bio: "  I grow\n\n\n\nblue things  " });
+prof = await alice.json("GET", "/api/public/u/alice");
+assert(prof.bio === "I grow\n\nblue things" && prof.stats.grown === 4, "bio is cleaned and stats count harvests");
+const tooLong = await alice.json("POST", "/api/profile", { bio: "x".repeat(281) }).catch((e) => e.message);
+assert(String(tooLong).includes("280"), "bio length limit");
+const badSlot = await alice.json("POST", "/api/feature", { bloomId: vase[3].id, slot: 9 }).catch((e) => e.message);
+assert(String(badSlot).includes("slot"), "featured slots are 0-4");
+const nobody = await fetch(BASE + "/api/public/u/nobody-here");
+assert(nobody.status === 404, "unknown profile is 404");
 let err = await (await fetch(BASE + "/api/pollinate", { method: "POST" })).status;
 assert(err === 401, "anon blocked");
 
@@ -83,6 +98,7 @@ ex = await alice.json("POST", "/api/export", { bloomId: target.id });
 await alice.consent(ex.consentUrl, "approve");
 vase = (await alice.json("GET", "/api/vase")).blooms;
 assert(!vase.find((b) => b.id === target.id), "exported bloom leaves vase");
+assert(!(await alice.json("GET", "/api/public/u/alice")).featured.find((b) => b.id === target.id), "an exported bloom is no longer featured");
 let inv = await alice.json("GET", "/api/serble/inventory");
 assert(inv.length === 1 && inv[0].bloom.id === target.id, "item in alice's serble inventory");
 const item = await alice.json("GET", "/__mock/item/" + inv[0].itemId);

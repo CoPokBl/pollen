@@ -159,12 +159,12 @@ function apply(p: ProposalRow, status: string) {
         addSeed(p.user_id, wildGenome(r, config.seedPackLuck) as Genome, "packet", null, 0);
     }
     if (p.kind === "export") {
-      if (status === "Approved") db.prepare("UPDATE blooms SET state = 'exported', owner_id = NULL WHERE id = ?").run(payload.bloomId);
+      if (status === "Approved") db.prepare("UPDATE blooms SET state = 'exported', owner_id = NULL, featured_slot = NULL WHERE id = ?").run(payload.bloomId);
       else db.prepare("UPDATE blooms SET state = 'vase' WHERE id = ? AND state = 'exporting'").run(payload.bloomId);
     }
     if (p.kind === "import" && status === "Approved") {
       for (const itemId of payload.itemIds as string[])
-        db.prepare("UPDATE blooms SET state = 'vase', owner_id = ?, pollinated_at = NULL WHERE item_id = ?").run(p.user_id, itemId);
+        db.prepare("UPDATE blooms SET state = 'vase', owner_id = ?, pollinated_at = NULL, featured_slot = NULL WHERE item_id = ?").run(p.user_id, itemId);
     }
     db.prepare("UPDATE proposals SET status = ?, applied = 1, resolved_at = ? WHERE id = ?").run(status, Date.now(), p.id);
   });

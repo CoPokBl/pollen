@@ -109,6 +109,11 @@ const migrations: string[] = [
    );`,
   // 2: fertiliser, made by composting flowers (#9)
   `ALTER TABLE users ADD COLUMN fertiliser INTEGER NOT NULL DEFAULT 0;`,
+  // 3: profiles (#13): a short description, and up to 5 featured flowers per vase
+  `ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT '';
+   ALTER TABLE blooms ADD COLUMN featured_slot INTEGER;
+   CREATE UNIQUE INDEX blooms_featured ON blooms(owner_id, featured_slot) WHERE featured_slot IS NOT NULL;
+   CREATE INDEX users_username ON users(username COLLATE NOCASE);`,
 ];
 
 db.exec("CREATE TABLE IF NOT EXISTS schema_version (v INTEGER NOT NULL)");

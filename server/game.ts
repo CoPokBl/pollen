@@ -157,7 +157,7 @@ export function harvest(userId: string, slot: number) {
 export interface BloomRow {
   id: string; owner_id: string | null; grower_id: string | null; genome: string; species: string; rarity: string;
   score: number; origin: string; parents: string | null; generation: number; state: string; item_id: string | null;
-  pollinated_at: number | null; created_at: number;
+  pollinated_at: number | null; created_at: number; featured_slot?: number | null;
 }
 
 export function bloomView(b: BloomRow, now = Date.now()) {
@@ -174,6 +174,57 @@ export function bloomView(b: BloomRow, now = Date.now()) {
     itemId: b.item_id,
     pollenReadyAt: b.pollinated_at && now - b.pollinated_at < POLLINATE_COOLDOWN ? b.pollinated_at + POLLINATE_COOLDOWN : null,
     createdAt: b.created_at,
+    featuredSlot: b.featured_slot ?? null,
+  };
+}
+
+// ------------------------------------------------------------------ profiles (#13)
+
+export const FEATURED_SLOTS = 5;
+export const BIO_MAX = 280;
+
+/** Put a flower in a featured slot (moving out whatever was there), or take it out with slot = null. */
+export function feature(userId: string, bloomId: string, slot: number | null) {
+  if (slot !== null && (!Number.isInteger(slot) || slot < 0 || slot >= FEATURED_SLOTS)) throw new GameError("No such slot.");
+  tx(() => {
+    const b = db.prepare("SELECT featured_slot FROM blooms WHERE id = ? AND owner_id = ? AND state = 'vase'").get(bloomId, userId) as { featured_slot: number | null } | undefined;
+    if (!b) throw new GameError("That flower isn't in your vase.");
+    if (slot === null) { db.prepare("UPDATE blooms SET featured_slot = NULL WHERE id = ?").run(bloomId); return; }
+    // Swap: the flower already in the target slot moves to this flower's old slot (or out).
+    db.prepare("UPDATE blooms SET featured_slot = NULL WHERE id = ?").run(bloomId);
+    db.prepare("UPDATE blooms SET featured_slot = ? WHERE owner_id = ? AND featured_slot = ?").run(b.featured_slot, userId, slot);
+    db.prepare("UPDATE blooms SET featured_slot = ? WHERE id = ?").run(slot, bloomId);
+  });
+  logEvent(userId, "feature");
+}
+
+export function setBio(userId: string, bio: string) {
+  const clean = bio.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "").replace(/\n{3,}/g, "\n\n").trim();
+  if (clean.length > BIO_MAX) throw new GameError(`Keep it under ${BIO_MAX} characters.`);
+  db.prepare("UPDATE users SET bio = ? WHERE id = ?").run(clean, userId);
+  return clean;
+}
+
+export function profileView(username: string) {
+  const u = db.prepare("SELECT id, username, bio, created_at FROM users WHERE username = ? COLLATE NOCASE").get(username) as
+    { id: string; username: string; bio: string; created_at: number } | undefined;
+  if (!u) return null;
+  const one = (sql: string) => (db.prepare(sql).get(u.id) as { n: number | null }).n ?? 0;
+  const featured = (db.prepare("SELECT * FROM blooms WHERE owner_id = ? AND featured_slot IS NOT NULL ORDER BY featured_slot").all(u.id) as unknown as BloomRow[]).map((b) => bloomView(b));
+  const discoveries = (db.prepare(`SELECT b.* FROM species s JOIN blooms b ON b.id = s.first_bloom_id WHERE s.first_user_id = ?
+                                   ORDER BY b.score DESC, s.discovered_at DESC LIMIT 12`).all(u.id) as unknown as BloomRow[]).map((b) => bloomView(b));
+  return {
+    username: u.username,
+    bio: u.bio,
+    joined: u.created_at,
+    stats: {
+      grown: one("SELECT COUNT(*) n FROM events WHERE user_id = ? AND kind = 'harvest'"),
+      inVase: one("SELECT COUNT(*) n FROM blooms WHERE owner_id = ? AND state = 'vase'"),
+      species: one("SELECT COUNT(*) n FROM species WHERE first_user_id = ?"),
+      bestGeneration: one("SELECT MAX(generation) n FROM blooms WHERE grower_id = ?"),
+    },
+    featured,
+    discoveries,
   };
 }
 

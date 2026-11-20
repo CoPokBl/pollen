@@ -4,7 +4,7 @@ import { Flower, Link, fmtDuration } from "./lib";
 export interface Bloom {
   id: string; genome: Genome; species: string; rarity: string; score: number; origin: string; generation: number;
   parents: string[] | null; state: string; itemId: string | null; pollenReadyAt: number | null; createdAt: number;
-  grower?: string; owner?: string | null; speciesCount?: number;
+  grower?: string; owner?: string | null; speciesCount?: number; featuredSlot?: number | null;
 }
 
 export function RarityTag({ r }: { r: string }) {

@@ -76,6 +76,9 @@ export default function Vase() {
       (r) => `Composted ${r.composted} flower${r.composted > 1 ? "s" : ""} into ${r.gained} fertiliser. Use it in your garden to speed up growth.`);
     if (r) { setSel([]); setMode("view"); setOpen(null); reload(); }
   };
+  const feature = async (bloomId: string, slot: number | null) => {
+    if (await run(() => api("/api/feature", { bloomId, slot }), slot === null ? undefined : "Featured on your profile.")) reload();
+  };
   const toggle = (b: Bloom) => {
     if (mode === "compost") return setSel((s) => s.includes(b.id) ? s.filter((x) => x !== b.id) : [...s, b.id]);
     if (mode !== "pollinate") return setOpen(b);
@@ -110,6 +113,7 @@ export default function Vase() {
         <button className="btn accent" disabled={!sel.length || busy} onClick={() => compost(sel)}>Compost</button>
         <button className="btn ghost" onClick={() => { setMode("view"); setSel([]); }}>Cancel</button></>}
     </div>
+    {tab === "vase" && inVase.length > 0 && mode === "view" && <FeaturedShelf blooms={inVase} onFeature={feature} onOpen={setOpen} />}
     {tab === "vase" && inVase.length > 0 && <div className="row vase-tools">
       <label className="faint">Sort <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
         {Object.entries(SORTS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></label>
@@ -154,6 +158,14 @@ export default function Vase() {
               if (r) toConsent(r.consentUrl);
             }}>Send to Serble{config && Number(config.prices.export.coins) > 0 ? <> · <Coins n={config.prices.export.coins} /></> : null}</button>
             <Link to={`/b/${open.id}`} className="btn ghost">Public page</Link>
+            {open.featuredSlot != null
+              ? <button className="btn ghost" disabled={busy} onClick={() => { feature(open.id, null); setOpen(null); }}>Unfeature</button>
+              : <button className="btn ghost" disabled={busy} onClick={() => {
+                  const used = new Set(inVase.map((b) => b.featuredSlot).filter((x) => x != null));
+                  const free = [0, 1, 2, 3, 4].find((i) => !used.has(i));
+                  if (free === undefined) return toast("All 5 featured slots are full. Drag this flower onto one to swap it in.", true);
+                  feature(open.id, free); setOpen(null);
+                }}>★ Feature</button>}
           </div>
           <p className="faint" style={{ marginTop: 10 }}>Sending turns this flower into a Serble item you can sell or trade on the <a href={config?.marketUrl} target="_blank" rel="noreferrer">Market</a>. Whoever holds it can bring it back into their own Pollen garden to breed.</p>
           <button className="linkish" style={{ fontSize: ".85rem" }} disabled={busy} onClick={() => {
@@ -230,4 +242,27 @@ function CompostBin({ onDropBloom }: { onDropBloom: (id: string) => void }) {
   const drop = useDropTarget("compost-bin", (p: Payload) => p.kind === "bloom", (p: Payload) => p.kind === "bloom" && onDropBloom(p.id));
   return <div className={"bin" + drop.state + (dragging?.payload.kind === "bloom" ? " bin-open" : "")} {...drop.props}
     title="Drag a flower here to compost it into fertiliser" aria-label="Compost bin">{BIN}</div>;
+}
+
+function FeaturedShelf({ blooms, onFeature, onOpen }: { blooms: Bloom[]; onFeature: (id: string, slot: number | null) => void; onOpen: (b: Bloom) => void }) {
+  const { me } = useSession();
+  const bySlot = new Map(blooms.filter((b) => b.featuredSlot != null).map((b) => [b.featuredSlot!, b]));
+  return <div className="shelf">
+    <div className="shelf-head"><b>Featured</b> <span className="faint">Drag your best flowers here to show them on {me ? <Link to={`/u/${me.username}`}>your profile</Link> : "your profile"}.</span></div>
+    <div className="shelf-slots">{[0, 1, 2, 3, 4].map((i) => <FeatureSlot key={i} slot={i} bloom={bySlot.get(i)} onFeature={onFeature} onOpen={onOpen} />)}</div>
+  </div>;
+}
+
+function FeatureSlot({ slot, bloom, onFeature, onOpen }: { slot: number; bloom?: Bloom; onFeature: (id: string, slot: number | null) => void; onOpen: (b: Bloom) => void }) {
+  const drop = useDropTarget(`feature-${slot}`, (p: Payload) => p.kind === "bloom" && p.id !== bloom?.id, (p: Payload) => p.kind === "bloom" && onFeature(p.id, slot));
+  const drag = useDraggable(bloom ? { kind: "bloom", id: bloom.id } : { kind: "bloom", id: "" },
+    () => bloom ? <div className="card bloom"><Flower genome={bloom.genome} uid={"fg" + bloom.id} /></div> : null,
+    { hold: 220, disabled: !bloom, onTap: () => bloom && onOpen(bloom) });
+  return <div className={"slot" + (bloom ? " filled" : "") + drop.state} {...drop.props} {...(bloom ? drag : {})}
+    aria-label={bloom ? `Featured: ${bloom.species}` : `Empty featured slot ${slot + 1}`} role={bloom ? "button" : undefined} tabIndex={bloom ? 0 : undefined}>
+    {bloom ? <>
+      <Flower genome={bloom.genome} uid={"f" + bloom.id} />
+      <button className="slot-x" aria-label="Remove from featured" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onFeature(bloom.id, null); }}>×</button>
+    </> : <span className="slot-star" aria-hidden>★</span>}
+  </div>;
 }

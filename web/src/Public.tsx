@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useApi, useSession, useNow, Flower, Link } from "./lib";
+import { api, useApi, useAction, useSession, useNow, Flower, Link } from "./lib";
 import { BloomCard, RarityTag, Traits, type Bloom } from "./blooms";
 import { wildGenome, mulberry32, type Genome } from "../../shared/genome";
 
@@ -75,7 +75,7 @@ export function Almanac() {
       <div className="card pad">
         <h3>Top discoverers</h3>
         <table className="lb"><tbody>
-          {leaders?.map((l, i) => <tr key={l.username}><td>{i + 1}. {l.username}</td><td>{l.species}</td></tr>)}
+          {leaders?.map((l, i) => <tr key={l.username}><td>{i + 1}. <Link to={`/u/${encodeURIComponent(l.username)}`}>{l.username}</Link></td><td>{l.species}</td></tr>)}
         </tbody></table>
         {leaders?.length === 0 && <p className="faint">No one yet.</p>}
       </div>
@@ -99,8 +99,9 @@ export function BloomPage({ id }: { id: string }) {
         <div>
           <RarityTag r={b.rarity} />
           <h1 style={{ fontSize: "2.2rem", marginTop: 8 }}>{b.species}</h1>
-          <p className="muted">Grown by <b>{b.grower ?? "someone"}</b>{b.state === "exported" ? ". It now lives in someone's Serble inventory as a tradable item."
-            : b.owner && b.owner !== b.grower ? `, now in ${b.owner}'s vase.` : "."}</p>
+          <p className="muted">Grown by {b.grower ? <Link to={`/u/${encodeURIComponent(b.grower)}`}><b>{b.grower}</b></Link> : <b>someone</b>}
+            {b.state === "exported" ? ". It now lives in someone's Serble inventory as a tradable item."
+            : b.owner && b.owner !== b.grower ? <>, now in <Link to={`/u/${encodeURIComponent(b.owner)}`}>{b.owner}</Link>'s vase.</> : "."}</p>
           <Traits g={b.genome} b={b} now={now} />
           {b.state === "exported" && <a className="btn ghost" href={config?.marketUrl} target="_blank" rel="noreferrer">Look for it on the Market</a>}
         </div>
@@ -116,6 +117,59 @@ export function BloomPage({ id }: { id: string }) {
     {b.children.length > 0 && <div className="section">
       <h3>Offspring</h3>
       <div className="lineage">{b.children.map((c) => <BloomCard key={c.id} b={c} to={`/b/${c.id}`} />)}</div>
+    </div>}
+  </div>;
+}
+
+interface Profile {
+  username: string; bio: string; joined: number;
+  stats: { grown: number; inVase: number; species: number; bestGeneration: number };
+  featured: Bloom[]; discoveries: Bloom[];
+}
+
+export function ProfilePage({ username }: { username: string }) {
+  const { me } = useSession();
+  const { data: p, error, reload } = useApi<Profile>(`/api/public/u/${encodeURIComponent(username)}`, [username]);
+  const [editing, setEditing] = useState(false);
+  const [bio, setBio] = useState("");
+  const { busy, run } = useAction();
+  if (error) return <div className="wrap section empty-state"><h2>No gardener by that name</h2><Link to="/almanac" className="btn">Browse the Almanac</Link></div>;
+  if (!p) return <div className="wrap section"><span className="spin" /></div>;
+  const mine = me?.username.toLowerCase() === p.username.toLowerCase();
+  return <div className="wrap section">
+    <div className="card pad profile-head">
+      <div className="avatar" aria-hidden>{p.featured[0] ? <Flower genome={p.featured[0].genome} uid="av" head /> : <img src="/favicon.svg" alt="" />}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <h1 style={{ fontSize: "2rem", marginBottom: 4 }}>{p.username}</h1>
+        <p className="faint">Gardening since {new Date(p.joined).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}</p>
+        {editing ? <div className="bio-edit">
+          <textarea value={bio} maxLength={280} rows={3} onChange={(e) => setBio(e.target.value)} placeholder="A little about you and your garden" autoFocus />
+          <div className="row"><span className="faint">{bio.length}/280</span><span className="spacer" />
+            <button className="btn ghost small" onClick={() => setEditing(false)}>Cancel</button>
+            <button className="btn accent small" disabled={busy} onClick={async () => {
+              if (await run(() => api("/api/profile", { bio }), "Saved.")) { setEditing(false); reload(); }
+            }}>Save</button></div>
+        </div> : <>
+          {p.bio ? <p className="bio">{p.bio}</p> : mine ? <p className="faint">No description yet.</p> : null}
+          {mine && <button className="linkish" onClick={() => { setBio(p.bio); setEditing(true); }}>{p.bio ? "Edit description" : "Add a description"}</button>}
+        </>}
+        <div className="stats" style={{ marginTop: 14 }}>
+          <div><b>{p.stats.grown}</b><span>flowers grown</span></div>
+          <div><b>{p.stats.species}</b><span>species discovered</span></div>
+          <div><b>{p.stats.bestGeneration}</b><span>best generation</span></div>
+          <div><b>{p.stats.inVase}</b><span>in vase</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div className="section">
+      <h3>Featured flowers</h3>
+      {p.featured.length ? <div className="blooms">{p.featured.map((b) => <BloomCard key={b.id} b={b} to={`/b/${b.id}`} />)}</div>
+        : <p className="muted">{mine ? <>Nothing featured yet. Drag your best flowers onto the Featured shelf in your <Link to="/vase">vase</Link>.</> : "Nothing featured yet."}</p>}
+    </div>
+    {p.discoveries.length > 0 && <div className="section">
+      <h3>First to discover</h3>
+      <div className="blooms">{p.discoveries.map((b) => <BloomCard key={b.id} b={b} to={`/b/${b.id}`} />)}</div>
     </div>}
   </div>;
 }

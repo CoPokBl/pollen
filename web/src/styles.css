@@ -259,3 +259,25 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .sack[data-draggable] { touch-action: none; }
 .drag-swing { transform-origin: 50% 15%; transition: transform .18s cubic-bezier(.3, 1.5, .5, 1); }
 @media (prefers-reduced-motion: reduce) { .drag-swing { transform: none !important; } }
+
+/* ---------- featured shelf and profiles (#13) */
+.shelf { margin: 6px 0 10px; padding: 12px; border-radius: var(--radius); background: var(--paper-2); }
+.shelf-head { margin-bottom: 8px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.shelf-slots { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.slot { position: relative; aspect-ratio: 1 / 1.1; border-radius: 14px; border: 2px dashed var(--line); display: grid; place-items: center; background: transparent; }
+.slot.filled { border-style: solid; background: var(--card); box-shadow: var(--shadow); cursor: pointer; }
+.slot svg { width: 100%; height: 100%; display: block; }
+.slot-star { color: var(--line); font-size: 1.6rem; }
+.slot-x { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: var(--paper-2); color: var(--ink-2); cursor: pointer; line-height: 1; font-size: 14px; opacity: .8; }
+.slot-x:hover { opacity: 1; }
+@media (max-width: 520px) { .shelf-slots { gap: 6px; } .slot-x { width: 18px; height: 18px; font-size: 12px; } }
+.me-link { font-weight: 800; color: var(--ink-2); text-decoration: none; margin-right: 4px; max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.me-link:hover { color: var(--ink); }
+@media (max-width: 420px) { .me-link { display: none; } }
+.profile-head { display: flex; gap: 20px; align-items: flex-start; }
+.avatar { width: 96px; height: 96px; flex: none; border-radius: 24px; background: var(--paper-2); overflow: hidden; display: grid; place-items: center; }
+.avatar > div, .avatar svg { width: 100%; height: 100%; display: block; }
+.avatar img { width: 60%; }
+.bio { white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: 4px; }
+.bio-edit textarea { width: 100%; font: inherit; border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 10px; background: var(--card); color: var(--ink); resize: vertical; }
+@media (max-width: 560px) { .profile-head { flex-direction: column; } .avatar { width: 72px; height: 72px; } }
