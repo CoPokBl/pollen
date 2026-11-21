@@ -6,6 +6,7 @@ import * as game from "./game.ts";
 import * as eco from "./economy.ts";
 import { serble, SerbleError } from "./serble.ts";
 import { commissionView, claimCommission } from "./commissions.ts";
+import { react, reactionSummary, flowerOfTheDay } from "./social.ts";
 import { renderFlower, validGenome, crossOdds } from "../shared/genome.ts";
 
 const str = (v: unknown) => (typeof v === "string" ? v : "");
@@ -87,6 +88,9 @@ export function registerRoutes(app: FastifyInstance) {
     return p;
   });
 
+  app.get("/api/public/flower-of-the-day", async () => ({ flower: flowerOfTheDay() }));
+  app.get("/api/reactions/:id", async (req) => reactionSummary(str((req.params as any).id), req.session?.user_id ?? null));
+
   app.get("/api/commission", async (req) => commissionView(req.session?.user_id ?? null));
 
   app.get("/api/public/leaders", async () => {
@@ -133,6 +137,10 @@ export function registerRoutes(app: FastifyInstance) {
       const a = get(str(q.a)), b = get(str(q.b));
       if (!a || !b) throw new game.GameError("Pick two of your own flowers.");
       return crossOdds(JSON.parse(a.genome), JSON.parse(b.genome));
+    });
+    p.post("/api/react", async (req) => {
+      const b = req.body as any;
+      return react(uid(req), str(b?.bloomId), str(b?.kind));
     });
     p.post("/api/commission/claim", async (req) => claimCommission(uid(req), str((req.body as any)?.bloomId)));
     p.post("/api/release", async (req) => game.release(uid(req), str((req.body as any)?.bloomId)));

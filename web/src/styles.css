@@ -327,3 +327,20 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .claim > div { width: 30px; height: 30px; border-radius: 50%; overflow: hidden; background: var(--card); }
 .claim svg { width: 100%; height: 100%; display: block; }
 @media (max-width: 560px) { .commission { flex-direction: column; } .commission-art { width: 96px; height: 96px; } }
+
+/* ---------- reactions and flower of the day (#13, #14) */
+.reactions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; }
+.react { display: inline-flex; align-items: center; gap: 4px; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 5px 12px; font-size: 1rem; cursor: pointer; transition: transform .1s; }
+.react:hover:not(:disabled) { transform: scale(1.06); }
+.react:disabled { cursor: default; }
+.react.on { border-color: var(--accent); background: var(--accent-soft); }
+.react .n { font-weight: 800; font-size: .85rem; min-width: .5em; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.almanac-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 14px; margin-bottom: 18px; align-items: stretch; }
+@media (max-width: 860px) { .almanac-top { grid-template-columns: 1fr; } }
+.fotd { display: flex; gap: 14px; align-items: center; text-decoration: none; }
+.fotd-art { width: 96px; height: 96px; flex: none; border-radius: 20px; overflow: hidden; background: radial-gradient(circle at 50% 45%, #fff6d8, var(--paper-2)); }
+.fotd-art > div, .fotd-art svg { width: 100%; height: 100%; display: block; }
+.fotd-body { min-width: 0; }
+.fotd-kicker { text-transform: uppercase; letter-spacing: .05em; font-weight: 800; font-size: .75rem; }
+.fotd h3 { margin: 2px 0 6px; }

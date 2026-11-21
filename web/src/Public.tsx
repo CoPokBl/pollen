@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api, useApi, useAction, useSession, useNow, Flower, Link } from "./lib";
 import { BloomCard, RarityTag, Traits, type Bloom } from "./blooms";
 import { CommissionCard } from "./Commission";
+import { Reactions, FlowerOfTheDay } from "./Social";
 import { wildGenome, mulberry32, type Genome } from "../../shared/genome";
 
 interface Stats { gardeners: number; blooms: number; species: number; onSerble: number }
@@ -44,6 +45,8 @@ export function Landing() {
       <div className="card pad"><h3><span className="num">3</span>Trade</h3><p className="muted">Send a flower to Serble as an item, sell it on the Market, or bring someone else's bloom home to breed from.</p></div>
     </section>
 
+    <section className="section"><FlowerOfTheDay /></section>
+
     {top && top.length > 0 && <section className="section">
       <div className="section-head"><h2>Finest blooms</h2><Link to="/almanac" className="linkish">see all</Link></div>
       <div className="blooms">{top.slice(0, 12).map((b) => <BloomCard key={b.id} b={b} to={`/b/${b.id}`} extra={<div className="faint">by {b.grower}</div>} />)}</div>
@@ -59,7 +62,7 @@ export function Almanac() {
   const { data: leaders } = useApi<{ username: string; species: number }[]>("/api/public/leaders");
   const { data: blooms } = useApi<Bloom[]>(tab === "species" ? null : `/api/public/blooms?sort=${tab}`, [tab]);
   return <div className="wrap section">
-    <div style={{ marginBottom: 18 }}><CommissionCard /></div>
+    <div className="almanac-top"><FlowerOfTheDay /><CommissionCard /></div>
     <div className="section-head">
       <h2>Almanac</h2>
       <div className="tabs">
@@ -91,7 +94,7 @@ export function Almanac() {
 export function BloomPage({ id }: { id: string }) {
   const { data: b, error } = useApi<Bloom & { parentBlooms: (Bloom & { missing?: boolean })[] | null; children: Bloom[] }>(`/api/public/bloom/${id}`, [id]);
   const now = useNow(60_000);
-  const { config } = useSession();
+  const { config, me } = useSession();
   if (error) return <div className="wrap section empty-state"><h2>Not found</h2><p>{error}</p><Link to="/almanac" className="btn">Browse the Almanac</Link></div>;
   if (!b) return <div className="wrap section"><span className="spin" /></div>;
   return <div className="wrap section">
@@ -105,6 +108,7 @@ export function BloomPage({ id }: { id: string }) {
             {b.state === "exported" ? ". It now lives in someone's Serble inventory as a tradable item."
             : b.owner && b.owner !== b.grower ? <>, now in <Link to={`/u/${encodeURIComponent(b.owner)}`}>{b.owner}</Link>'s vase.</> : "."}</p>
           <Traits g={b.genome} b={b} now={now} />
+          <Reactions bloomId={b.id} own={!!me && (me.username === b.grower || me.username === b.owner)} />
           {b.state === "exported" && <a className="btn ghost" href={config?.marketUrl} target="_blank" rel="noreferrer">Look for it on the Market</a>}
         </div>
       </div>

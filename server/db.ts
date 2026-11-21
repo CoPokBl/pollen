@@ -130,6 +130,25 @@ const migrations: string[] = [
      UNIQUE (week, user_id),
      UNIQUE (week, place)
    );`,
+  // 5: reactions (#13) and flower of the day (#14)
+  `CREATE TABLE reactions (
+     bloom_id TEXT NOT NULL,
+     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     kind TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     PRIMARY KEY (bloom_id, user_id)
+   );
+   CREATE INDEX reactions_recent ON reactions(created_at);
+   CREATE TABLE daily_flowers (
+     day INTEGER PRIMARY KEY,         -- days since 1970-01-01 UTC
+     bloom_id TEXT NOT NULL,
+     genome TEXT NOT NULL,
+     species TEXT NOT NULL,
+     rarity TEXT NOT NULL,
+     grower TEXT,
+     reactions INTEGER NOT NULL,
+     reason TEXT NOT NULL             -- reactions | rarest
+   );`,
 ];
 
 db.exec("CREATE TABLE IF NOT EXISTS schema_version (v INTEGER NOT NULL)");
