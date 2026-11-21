@@ -151,4 +151,41 @@ if (gAl.fertiliser >= gAl.fertiliseCost) {
   const r = await alice.json("POST", "/api/fertilise", { slot }).catch((e) => e.message);
   assert(String(r).includes("need"), "fertilising without enough is refused");
 }
+// weekly commissions (#2)
+const { exampleGenome } = await import("../shared/commission.ts");
+const com = await alice.json("GET", "/api/commission");
+assert(com.title && com.requirements.length === 2 && com.claims.length === 0, "this week's commission: " + com.title);
+const base = { hue: 30, hue2: 200, sat: 60, lum: 55, petals: 6, shape: 0, layers: 1, pattern: 0, center: 0, centerHue: 50, stem: 0.5, leaves: 2, curl: 0, glow: false, iridescent: false };
+const winning = exampleGenome(com, base);
+await alice.json("POST", "/__mock/set-app-balance", { raw: String(30n << 24n) });        // enough for first place only
+const ga = await alice.json("POST", "/__mock/grant-bloom", { username: "alice", genome: winning });
+const plainBloom = await alice.json("POST", "/__mock/grant-bloom", { username: "alice", genome: base });
+const wrong = await alice.json("POST", "/api/commission/claim", { bloomId: plainBloom.id }).catch((e) => e.message);
+assert(String(wrong).includes("doesn't match"), "a non-matching flower is refused");
+const bal0 = (await alice.json("GET", "/api/balance")).coins;
+const c1 = await alice.json("POST", "/api/commission/claim", { bloomId: ga.id });
+assert(c1.place === 1 && c1.status === "paid" && c1.reward === "25", "first place is paid 25 coins");
+const bal1 = (await alice.json("GET", "/api/balance")).coins;
+assert(Number(bal1) - Number(bal0) === 25, `alice's Serble balance went up by 25 (${bal0} -> ${bal1})`);
+const again = await alice.json("POST", "/api/commission/claim", { bloomId: ga.id }).catch((e) => e.message);
+assert(String(again).includes("already claimed"), "one claim per gardener per week");
+// a flower grown by someone else (e.g. bought on the market) doesn't count
+const gifted = await bob.json("POST", "/__mock/grant-bloom", { username: "bob", grower: "alice", genome: winning });
+const notGrown = await bob.json("POST", "/api/commission/claim", { bloomId: gifted.id }).catch((e) => e.message);
+assert(String(notGrown).includes("grew yourself"), "only flowers you grew count");
+// second place, but the app only has 5 coins left: the claim is owed, then paid once funded
+const gb = await bob.json("POST", "/__mock/grant-bloom", { username: "bob", genome: winning });
+const cl2 = await bob.json("POST", "/api/commission/claim", { bloomId: gb.id });
+assert(cl2.place === 2 && cl2.status === "owed" && cl2.reward === "15", "second place is owed when the app can't afford it yet");
+await bob.json("POST", "/__mock/fund-app", { raw: String(20n << 24n) });
+await bob.json("POST", "/__mock/reconcile", {});
+const comAfter = await bob.json("GET", "/api/commission");
+assert(comAfter.mine?.status === "paid" && comAfter.claims.map((x) => x.username).join() === "alice,bob", "the owed reward is paid once the app has funds");
+// a payment that happened but wasn't recorded must not be paid again
+await alice.json("POST", "/__mock/forget-payment", { username: "alice" });
+const appBefore = (await alice.json("GET", "/__mock/app-balance")).raw;
+await alice.json("POST", "/__mock/reconcile", {});
+const appAfter = (await alice.json("GET", "/__mock/app-balance")).raw;
+const aliceClaim = (await alice.json("GET", "/api/commission")).mine;
+assert(aliceClaim.status === "paid" && appBefore === appAfter, "an unrecorded payment is found in the ledger, not paid twice");
 console.log("ALL PASSED");

@@ -5,6 +5,7 @@ import { requireUser, userToken } from "./auth.ts";
 import * as game from "./game.ts";
 import * as eco from "./economy.ts";
 import { serble, SerbleError } from "./serble.ts";
+import { commissionView, claimCommission } from "./commissions.ts";
 import { renderFlower, validGenome, crossOdds } from "../shared/genome.ts";
 
 const str = (v: unknown) => (typeof v === "string" ? v : "");
@@ -86,6 +87,8 @@ export function registerRoutes(app: FastifyInstance) {
     return p;
   });
 
+  app.get("/api/commission", async (req) => commissionView(req.session?.user_id ?? null));
+
   app.get("/api/public/leaders", async () => {
     return db.prepare(`SELECT u.username, COUNT(*) AS species FROM species s JOIN users u ON u.id = s.first_user_id
                        GROUP BY s.first_user_id ORDER BY species DESC LIMIT 20`).all();
@@ -131,6 +134,7 @@ export function registerRoutes(app: FastifyInstance) {
       if (!a || !b) throw new game.GameError("Pick two of your own flowers.");
       return crossOdds(JSON.parse(a.genome), JSON.parse(b.genome));
     });
+    p.post("/api/commission/claim", async (req) => claimCommission(uid(req), str((req.body as any)?.bloomId)));
     p.post("/api/release", async (req) => game.release(uid(req), str((req.body as any)?.bloomId)));
     p.post("/api/compost-blooms", async (req) => {
       const ids = (req.body as any)?.bloomIds;

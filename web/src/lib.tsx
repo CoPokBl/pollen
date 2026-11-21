@@ -117,6 +117,7 @@ export function fmtDuration(ms: number) {
   if (ms <= 0) return "now";
   const s = Math.ceil(ms / 1000);
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  if (h >= 24) return `${Math.floor(h / 24)}d ${h % 24}h`;
   if (h) return `${h}h ${m}m`;
   if (m) return `${m}m ${sec.toString().padStart(2, "0")}s`;
   return `${sec}s`;

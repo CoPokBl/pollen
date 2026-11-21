@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useDraggable, useDropTarget, useDragging, type Payload } from "./drag";
+import { CommissionCard } from "./Commission";
 import { api, useApi, useAction, useNow, useSession, useToast, Flower, Coins, fmtDuration, hintColor, toConsent, Link, Modal } from "./lib";
 import { RarityTag } from "./blooms";
 import type { Genome, Stage } from "../../shared/genome";
@@ -175,6 +176,8 @@ export default function Garden() {
           }} />)}
         </div>}
     </div>
+
+    <div className="section"><CommissionCard compact /></div>
 
     <div className="side section">
       <div className="card pad">

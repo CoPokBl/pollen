@@ -56,6 +56,13 @@ export const serble = {
   itemFee: () => call<{ coins: string; raw: number }>("/api/v1/items/fee"),
   createItem: (body: { name: string; description?: string; iconUrl?: string }) =>
     call<SerbleItem>("/api/v1/items", { method: "POST", body: JSON.stringify(body) }),
+  /** Send coins from the app's balance to a user. No consent needed: it's a gift. */
+  transfer: (recipient: string, amountRaw: string, description: string) => {
+    if (!/^\d+$/.test(amountRaw)) throw new Error("bad amount");
+    const json = JSON.stringify({ recipient, description }).replace(/}$/, `,"amount":${amountRaw}}`);
+    return call<{ transaction: { id: string; description?: string } }>("/api/v1/balance/transfer", { method: "POST", body: json });
+  },
+  appTransactions: (limit = 200) => call<{ id: string; description?: string; amount: number; dateCreated: string }[]>(`/api/v1/balance/transactions?limit=${limit}`),
   appBalance: () => call<{ coins: number }>("/api/v1/balance"),
   createProposal: (body: {
     user: string; amount?: string; offeredItemIds?: string[]; requestedItemIds?: string[];

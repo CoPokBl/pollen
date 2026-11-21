@@ -10,6 +10,7 @@ import { registerAuth, loadSession } from "./auth.ts";
 import { registerRoutes } from "./routes.ts";
 import { registerMock } from "./mock.ts";
 import { startPoller } from "./economy.ts";
+import { reconcileCommissions } from "./commissions.ts";
 
 assertConfig();
 
@@ -68,5 +69,6 @@ if (existsSync(join(webDir, "index.html"))) {
 }
 
 startPoller();
+setInterval(() => { reconcileCommissions(); }, 60_000).unref();
 await app.listen({ port: config.port, host: "0.0.0.0" });
 app.log.info(`Pollen at ${config.publicUrl}${config.mock ? " (mock Serble)" : ""}`);

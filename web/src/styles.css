@@ -313,3 +313,17 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .tools { top: calc(var(--header-h) + env(safe-area-inset-top)); }
 .odds { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
 .odds-row { display: flex; gap: 8px 18px; flex-wrap: wrap; }
+
+/* ---------- weekly commission (#2) */
+.commission { display: flex; gap: 18px; align-items: flex-start; }
+.commission-art { width: 120px; height: 120px; flex: none; border-radius: 20px; background: var(--paper-2); overflow: hidden; }
+.commission-art > div, .commission-art svg { width: 100%; height: 100%; display: block; }
+.commission-body { flex: 1; min-width: 0; }
+.commission-kicker { text-transform: uppercase; letter-spacing: .05em; font-weight: 800; font-size: .75rem; }
+.commission h3 { font-size: 1.35rem; margin: 2px 0 8px; }
+.commission-done { font-weight: 700; color: var(--leaf); margin: 4px 0; }
+.claims { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0 10px; }
+.claim { display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: 999px; background: var(--paper-2); text-decoration: none; font-size: .88rem; }
+.claim > div { width: 30px; height: 30px; border-radius: 50%; overflow: hidden; background: var(--card); }
+.claim svg { width: 100%; height: 100%; display: block; }
+@media (max-width: 560px) { .commission { flex-direction: column; } .commission-art { width: 96px; height: 96px; } }

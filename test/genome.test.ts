@@ -81,3 +81,29 @@ describe("inheritance (#15)", async () => {
     expect(crossOdds(both, both).both).toBeGreaterThan(65);   // ~72%: breed two carriers of both
   });
 });
+
+describe("weekly commissions (#2)", async () => {
+  const { commissionFor, exampleGenome, matches, weekOf, weekStart } = await import("../shared/commission.ts");
+  it("weeks start on Monday 00:00 UTC", () => {
+    const w = weekOf(Date.UTC(2026, 10, 18, 12));
+    expect(new Date(weekStart(w)).toISOString()).toBe("2026-11-16T00:00:00.000Z");
+  });
+  it("every week's target is achievable and reads well", () => {
+    const base = wildGenome(mulberry32(5));
+    const titles = new Set<string>();
+    for (let w = 0; w < 400; w++) {
+      const c = commissionFor(w);
+      expect(c.requirements.length).toBe(2);
+      expect(matches(c, exampleGenome(c, base), 5), c.title).toBe(true);
+      expect(c.title).toMatch(/^An? [a-zA-Z-]/);
+      titles.add(c.title);
+    }
+    expect(titles.size).toBeGreaterThan(60);          // plenty of variety
+    expect(commissionFor(3).title).toBe(commissionFor(3).title);
+  });
+  it("a plain flower doesn't qualify", () => {
+    const c = commissionFor(weekOf(Date.now()));
+    const plain = { ...wildGenome(mulberry32(1)), glow: false, iridescent: false, shape: 0, pattern: 0, layers: 1, lum: 55, hue: 30, sat: 40 };
+    expect(matches(c, plain, 0)).toBe(false);
+  });
+});

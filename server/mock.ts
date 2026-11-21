@@ -83,6 +83,45 @@ export function registerMock(app: FastifyInstance) {
     // Raw numbers can exceed 2^53 in theory; fine for a mock.
     return reply.type("application/json").send(`{"ownerType":"${p.type}","ownerId":"${p.id}","coins":${bal(`${p.type}:${p.id}`)}}`);
   });
+  const ledger: { id: string; description?: string; amount: number; dateCreated: string }[] = [];
+  app.post("/__mock/api/v1/balance/transfer", async (req, reply) => {
+    const p = principal(req);
+    if (p?.type !== "App") return reply.code(403).send();
+    const b = req.body as any;
+    const amt = BigInt(b.amount);
+    if (bal(`App:${APP}`) < amt) return reply.code(400).send("Insufficient funds.");
+    const to = String(b.recipient).startsWith("u-") ? b.recipient : "u-" + b.recipient;
+    balances.set(`App:${APP}`, bal(`App:${APP}`) - amt);
+    balances.set(`User:${to}`, bal(`User:${to}`) + amt);
+    const t = { id: id(), description: b.description, amount: Number(amt), dateCreated: new Date().toISOString() };
+    ledger.unshift(t);
+    return { transaction: t };
+  });
+  app.get("/__mock/api/v1/balance/transactions", async (req, reply) => principal(req)?.type === "App" ? ledger : reply.code(403).send());
+  /** Test helper: plant a specific, already-harvested flower in someone's vase (mock mode only). */
+  app.post("/__mock/grant-bloom", async (req) => {
+    const { db } = await import("./db.ts");
+    const { speciesName, rarityOf, rarityScore } = await import("../shared/genome.ts");
+    const b = req.body as any;
+    const user = "u-" + b.username;
+    const bid = id();
+    db.prepare(`INSERT INTO blooms (id, owner_id, grower_id, genome, species, rarity, score, origin, generation, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'hybrid', ?, ?)`)
+      .run(bid, user, b.grower ? "u-" + b.grower : user, JSON.stringify(b.genome), speciesName(b.genome), rarityOf(b.genome), rarityScore(b.genome), b.generation ?? 4, Date.now());
+    return { id: bid };
+  });
+  /** Test helper: pretend we crashed after paying a claim but before recording it. */
+  app.post("/__mock/forget-payment", async (req) => {
+    const { db } = await import("./db.ts");
+    db.prepare("UPDATE commission_claims SET status = 'paying', tx_id = NULL, paid_at = NULL, created_at = created_at - 120000 WHERE user_id = ?").run("u-" + (req.body as any).username);
+    return { ok: true };
+  });
+  app.get("/__mock/app-balance", async () => ({ raw: String(bal(`App:${APP}`)) }));
+  app.post("/__mock/reconcile", async () => { const { reconcileCommissions } = await import("./commissions.ts"); await reconcileCommissions(); return { ok: true }; });
+  /** Test helper: give the app coins. */
+  app.post("/__mock/fund-app", async (req) => { balances.set(`App:${APP}`, bal(`App:${APP}`) + BigInt((req.body as any).raw)); return { ok: true }; });
+  /** Test helper: set the app's balance exactly. */
+  app.post("/__mock/set-app-balance", async (req) => { balances.set(`App:${APP}`, BigInt((req.body as any).raw)); return { ok: true }; });
   app.get("/__mock/api/v1/inventory", async (req, reply) => {
     const p = principal(req);
     if (p?.type !== "User") return reply.code(401).send();

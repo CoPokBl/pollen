@@ -114,6 +114,22 @@ const migrations: string[] = [
    ALTER TABLE blooms ADD COLUMN featured_slot INTEGER;
    CREATE UNIQUE INDEX blooms_featured ON blooms(owner_id, featured_slot) WHERE featured_slot IS NOT NULL;
    CREATE INDEX users_username ON users(username COLLATE NOCASE);`,
+  // 4: weekly commissions (#2). One claim per gardener per week; places are unique per week.
+  `CREATE TABLE commission_claims (
+     id TEXT PRIMARY KEY,
+     week INTEGER NOT NULL,
+     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     bloom_id TEXT NOT NULL,
+     genome TEXT NOT NULL,
+     place INTEGER NOT NULL,
+     reward_raw TEXT NOT NULL,
+     status TEXT NOT NULL,            -- owed | paying | paid | unrewarded
+     tx_id TEXT,
+     created_at INTEGER NOT NULL,
+     paid_at INTEGER,
+     UNIQUE (week, user_id),
+     UNIQUE (week, place)
+   );`,
 ];
 
 db.exec("CREATE TABLE IF NOT EXISTS schema_version (v INTEGER NOT NULL)");

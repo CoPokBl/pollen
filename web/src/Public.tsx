@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, useApi, useAction, useSession, useNow, Flower, Link } from "./lib";
 import { BloomCard, RarityTag, Traits, type Bloom } from "./blooms";
+import { CommissionCard } from "./Commission";
 import { wildGenome, mulberry32, type Genome } from "../../shared/genome";
 
 interface Stats { gardeners: number; blooms: number; species: number; onSerble: number }
@@ -58,6 +59,7 @@ export function Almanac() {
   const { data: leaders } = useApi<{ username: string; species: number }[]>("/api/public/leaders");
   const { data: blooms } = useApi<Bloom[]>(tab === "species" ? null : `/api/public/blooms?sort=${tab}`, [tab]);
   return <div className="wrap section">
+    <div style={{ marginBottom: 18 }}><CommissionCard /></div>
     <div className="section-head">
       <h2>Almanac</h2>
       <div className="tabs">
