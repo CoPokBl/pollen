@@ -114,10 +114,30 @@ jobs:
           kind="${KOMODO_TARGET%%:*}"; name="${KOMODO_TARGET#*:}"
           if [ "$kind" = stack ]; then body="{\"type\":\"DeployStack\",\"params\":{\"stack\":\"$name\"}}";
           else body="{\"type\":\"Deploy\",\"params\":{\"deployment\":\"$name\"}}"; fi
-          curl -fsS --retry 3 --retry-delay 5 -X POST "${KOMODO_URL%/}/execute" \
+          resp=$(curl -fsS --retry 3 --retry-delay 5 -X POST "${KOMODO_URL%/}/execute" \
             -H "Content-Type: application/json" -H "X-Api-Key: $KOMODO_API_KEY" -H "X-Api-Secret: $KOMODO_API_SECRET" \
-            -d "$body"
-          echo
+            -d "$body")
+          id=$(echo "$resp" | jq -r '._id["$oid"] // ._id // empty')
+          echo "Komodo update: ${id:-unknown}"
+          # Follow the update to its end and report each stage. This repo's logs are public, and
+          # Komodo stage logs can contain the container's environment, so print only stage names
+          # and results, and a failed stage's error output with any NAME=value redacted.
+          for i in $(seq 1 36); do
+            [ -z "$id" ] && break
+            u=$(curl -fsS -X POST "${KOMODO_URL%/}/read" -H "Content-Type: application/json" \
+              -H "X-Api-Key: $KOMODO_API_KEY" -H "X-Api-Secret: $KOMODO_API_SECRET" \
+              -d "{\"type\":\"GetUpdate\",\"params\":{\"id\":\"$id\"}}" || true)
+            status=$(echo "$u" | jq -r '.status // empty')
+            if [ "$status" = "Complete" ]; then
+              echo "$u" | jq -r '"Komodo deploy finished: success=\(.success)", (.logs[]? | "  stage \(.stage): success=\(.success)")'
+              echo "$u" | jq -r '.logs[]? | select(.success == false) | .stderr // ""' \
+                | grep -iE 'error|denied|not found|manifest|pull|timeout' \
+                | sed -E 's/[A-Za-z_][A-Za-z0-9_]*=[^ ]*/<redacted>/g' | cut -c1-300 | head -20 || true
+              [ "$(echo "$u" | jq -r '.success')" = "true" ] || exit 1
+              break
+            fi
+            sleep 5
+          done
       - name: Wait for production to serve this build
         if: env.HAS_SECRETS == 'true'
         run: |
