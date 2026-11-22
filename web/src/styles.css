@@ -347,3 +347,6 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .search { font: inherit; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 7px 14px; min-width: 0; flex: 1 1 220px; max-width: 320px; }
 .search:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .search-results .claim { padding: 6px 12px; gap: 8px; }
+.gift-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.gift-form .search { max-width: 220px; }
+.gift-banner { background: var(--leaf-soft); }

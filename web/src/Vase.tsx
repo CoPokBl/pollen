@@ -37,6 +37,9 @@ function usePref<T extends string>(key: string, fallback: T, allowed: readonly s
 export default function Vase() {
   const { config, refreshBalance } = useSession();
   const { data: vase, reload } = useApi<VaseData>("/api/vase");
+  const { data: gifts, setData: setGifts } = useApi<{ bloomId: string; species: string; sender: string | null }[]>("/api/gifts/new");
+  const [giving, setGiving] = useState(false);
+  const [giftTo, setGiftTo] = useState("");
   const blooms = vase?.blooms;
   const [sort, setSort] = usePref<SortKey>("pollen.vase.sort", "newest", Object.keys(SORTS));
   const [group, setGroup] = usePref<GroupKey>("pollen.vase.group", "none", Object.keys(GROUPS));
@@ -123,6 +126,12 @@ export default function Vase() {
       <span className="pill" title="Made by composting flowers. Drag the sack onto a growing plant in your garden.">🌱 {vase?.fertiliser ?? 0} fertiliser</span>
     </div>}
 
+    {tab === "vase" && gifts && gifts.length > 0 && <div className="banner gift-banner">
+      <span>🎁 {gifts.length === 1 ? <><b>{gifts[0].sender ?? "Someone"}</b> sent you a <b>{gifts[0].species}</b>!</>
+        : <>You've been sent {gifts.length} flowers by {[...new Set(gifts.map((g) => g.sender ?? "someone"))].join(", ")}!</>}</span>
+      <span className="spacer" />
+      <button className="btn small ghost" onClick={() => { api("/api/gifts/seen", {}).catch(() => {}); setGifts([]); }}>Thanks!</button>
+    </div>}
     {tab === "vase" && <>
       {travelling.length > 0 && <div className="banner">{travelling.length} flower{travelling.length > 1 ? "s are" : " is"} waiting for your approval on serble.net.</div>}
       {inVase.length === 0 ? <div className="empty-state">
@@ -146,7 +155,7 @@ export default function Vase() {
 
     {tab === "serble" && <SerbleTab onImported={reload} />}
 
-    {open && <Modal label={open.species} onClose={() => setOpen(null)}>
+    {open && <Modal label={open.species} onClose={() => { setOpen(null); setGiving(false); }}>
       <div className="detail">
         <div className="art"><Flower genome={open.genome} animate uid={"d" + open.id} /></div>
         <div>
@@ -168,6 +177,16 @@ export default function Vase() {
                   feature(open.id, free); setOpen(null);
                 }}>★ Feature</button>}
           </div>
+          {!giving ? <button className="btn ghost small" style={{ marginTop: 10 }} onClick={() => { setGiving(true); setGiftTo(""); }}>🎁 Gift to a gardener</button>
+            : <form className="gift-form" onSubmit={async (e) => {
+                e.preventDefault();
+                const r = await run(() => api<{ to: string; species: string }>("/api/gift", { bloomId: open.id, to: giftTo }), (r) => `Sent your ${r.species} to ${r.to}.`);
+                if (r) { setGiving(false); setOpen(null); reload(); }
+              }}>
+                <GardenerInput value={giftTo} onChange={setGiftTo} />
+                <button className="btn accent small" disabled={!giftTo.trim() || busy}>Send</button>
+                <button type="button" className="btn ghost small" onClick={() => setGiving(false)}>Cancel</button>
+              </form>}
           <p className="faint" style={{ marginTop: 10 }}>Sending turns this flower into a Serble item you can sell or trade on the <a href={config?.marketUrl} target="_blank" rel="noreferrer">Market</a>. Whoever holds it can bring it back into their own Pollen garden to breed.</p>
           <button className="linkish" style={{ fontSize: ".85rem" }} disabled={busy} onClick={() => {
             if (open.score < 4 && !confirm(`Compost your ${open.species} into ${yieldOf(open)} fertiliser? This can't be undone.`)) return;
@@ -287,4 +306,14 @@ function CrossOdds({ a, b }: { a: string; b: string }) {
     </div>
     <div className="faint">Form: {topShapes.map(([k, v]) => `${k} ${fmt(v)}`).join(" · ")}</div>
   </div>;
+}
+
+/** A username box with suggestions from the gardener search. */
+function GardenerInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const q = value.trim();
+  const { data } = useApi<{ gardeners: { username: string }[] }>(q.length >= 2 ? `/api/public/search?q=${encodeURIComponent(q)}` : null, [q]);
+  return <>
+    <input className="search" list="gardener-names" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Their name" autoFocus aria-label="Gardener to gift to" />
+    <datalist id="gardener-names">{data?.gardeners.map((g) => <option key={g.username} value={g.username} />)}</datalist>
+  </>;
 }

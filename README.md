@@ -48,7 +48,7 @@ node test/flow.mjs           # end-to-end, against a server started with MOCK_SE
 | `SESSION_SECRET` | random | Signs session cookies. Set it, or sessions end on restart |
 | `DATA_DIR` | `./data` (`/data` in Docker) | SQLite database |
 | `SEED_PACK_PRICE` / `SEED_PACK_SIZE` / `SEED_PACK_LUCK` | `10` / `3` / `3` | Packet price in coins, seeds per packet, rare-trait multiplier |
-| `EXPORT_FEE` | `1` | Coins charged to send a bloom to Serble |
+| `EXPORT_FEE` | `0` | Coins charged to send a bloom to Serble (Serble's own minting fee is currently 0) |
 | `FREE_SEED_HOURS` / `FREE_SEED_CAP` | `8` / `3` | Free seed rate |
 | `PLOTS` | `6` | Garden size |
 | `ADMIN_USERS` | | Serble usernames allowed to read `/api/admin/overview` |

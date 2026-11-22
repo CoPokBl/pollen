@@ -339,3 +339,35 @@ export function vaseView(userId: string) {
                            WHERE b.owner_id = ? ORDER BY b.created_at DESC`).all(userId) as unknown as (BloomRow & { species_count: number })[];
   return { blooms: rows.map((b) => ({ ...bloomView(b), speciesCount: b.species_count })), fertiliser: fertiliserOf(userId), compostYield: COMPOST_YIELD };
 }
+
+// ------------------------------------------------------------------ gifts (#3)
+
+export const GIFTS_PER_DAY = 10;
+
+/** Give a flower from your vase to another gardener. It keeps its original grower. */
+export function giftBloom(fromId: string, bloomId: string, toUsername: string) {
+  const name = toUsername.trim().replace(/^@/, "");
+  if (!name) throw new GameError("Who should it go to?");
+  return tx(() => {
+    const to = db.prepare("SELECT id, username FROM users WHERE username = ? COLLATE NOCASE").get(name) as { id: string; username: string } | undefined;
+    if (!to) throw new GameError(`There's no gardener called ${name} yet.`);
+    if (to.id === fromId) throw new GameError("That's you!");
+    const sent = (db.prepare("SELECT COUNT(*) n FROM gifts WHERE from_id = ? AND at > ?").get(fromId, Date.now() - 86400_000) as { n: number }).n;
+    if (sent >= GIFTS_PER_DAY) throw new GameError(`You can send ${GIFTS_PER_DAY} gifts a day. Try again tomorrow.`);
+    const b = db.prepare("SELECT id, species FROM blooms WHERE id = ? AND owner_id = ? AND state = 'vase'").get(bloomId, fromId) as { id: string; species: string } | undefined;
+    if (!b) throw new GameError("That flower isn't in your vase.");
+    db.prepare("UPDATE blooms SET owner_id = ?, featured_slot = NULL WHERE id = ?").run(to.id, b.id);
+    db.prepare("INSERT INTO gifts (id, bloom_id, species, from_id, to_id, at) VALUES (?, ?, ?, ?, ?, ?)").run(newId(), b.id, b.species, fromId, to.id, Date.now());
+    logEvent(fromId, "gift");
+    return { to: to.username, species: b.species };
+  });
+}
+
+/** Gifts you haven't acknowledged yet. */
+export function newGifts(userId: string) {
+  return db.prepare(`SELECT g.bloom_id AS bloomId, g.species, u.username AS sender, g.at FROM gifts g
+                     LEFT JOIN users u ON u.id = g.from_id WHERE g.to_id = ? AND g.seen = 0 ORDER BY g.at`).all(userId);
+}
+export function markGiftsSeen(userId: string) {
+  db.prepare("UPDATE gifts SET seen = 1 WHERE to_id = ? AND seen = 0").run(userId);
+}

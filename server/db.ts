@@ -149,6 +149,18 @@ const migrations: string[] = [
      reactions INTEGER NOT NULL,
      reason TEXT NOT NULL             -- reactions | rarest
    );`,
+  // 6: gifts between gardeners (#3)
+  `CREATE TABLE gifts (
+     id TEXT PRIMARY KEY,
+     bloom_id TEXT NOT NULL,
+     species TEXT NOT NULL,
+     from_id TEXT NOT NULL,
+     to_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     at INTEGER NOT NULL,
+     seen INTEGER NOT NULL DEFAULT 0
+   );
+   CREATE INDEX gifts_to ON gifts(to_id, seen);
+   CREATE INDEX gifts_from ON gifts(from_id, at);`,
 ];
 
 db.exec("CREATE TABLE IF NOT EXISTS schema_version (v INTEGER NOT NULL)");

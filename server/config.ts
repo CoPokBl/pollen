@@ -44,7 +44,7 @@ export const config = {
   seedPackSize: Number(env("SEED_PACK_SIZE", "3")),
   seedPackLuck: Number(env("SEED_PACK_LUCK", "3")),
   /** Extra coins charged on export on top of Serble's item-minting fee. */
-  exportFee: env("EXPORT_FEE", "1")!,
+  exportFee: env("EXPORT_FEE", "0")!,
   freeSeedHours: Number(env("FREE_SEED_HOURS", "8")),
   freeSeedCap: Number(env("FREE_SEED_CAP", "3")),
   plots: Number(env("PLOTS", "6")),

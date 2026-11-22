@@ -155,6 +155,12 @@ export function registerRoutes(app: FastifyInstance) {
       if (!a || !b) throw new game.GameError("Pick two of your own flowers.");
       return crossOdds(JSON.parse(a.genome), JSON.parse(b.genome));
     });
+    p.post("/api/gift", async (req) => {
+      const b = req.body as any;
+      return game.giftBloom(uid(req), str(b?.bloomId), str(b?.to).slice(0, 255));
+    });
+    p.get("/api/gifts/new", async (req) => game.newGifts(uid(req)));
+    p.post("/api/gifts/seen", async (req) => { game.markGiftsSeen(uid(req)); return { ok: true }; });
     p.post("/api/react", async (req) => {
       const b = req.body as any;
       return react(uid(req), str(b?.bloomId), str(b?.kind));
