@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, useApi, useAction, useSession, useNow, Flower, Link } from "./lib";
 import { BloomCard, RarityTag, Traits, type Bloom } from "./blooms";
 import { CommissionCard } from "./Commission";
@@ -54,25 +54,46 @@ export function Landing() {
   </div>;
 }
 
-interface Species { name: string; rarity: string; count: number; discoveredAt: number; discoverer: string; bloomId: string; genome: Genome | null }
+interface Species { name: string; rarity: string; count: number; discoveredAt: number; discoverer: string; bloomId: string; genome: Genome | null; alive?: boolean }
 
 export function Almanac() {
   const [tab, setTab] = useState<"species" | "recent" | "top">("species");
   const { data: species } = useApi<Species[]>("/api/public/almanac");
   const { data: leaders } = useApi<{ username: string; species: number }[]>("/api/public/leaders");
   const { data: blooms } = useApi<Bloom[]>(tab === "species" ? null : `/api/public/blooms?sort=${tab}`, [tab]);
+  const [q, setQ] = useState("");
+  const [debounced, setDebounced] = useState("");
+  useEffect(() => { const t = setTimeout(() => setDebounced(q.trim()), 250); return () => clearTimeout(t); }, [q]);
+  const searching = debounced.length >= 2;
+  const { data: found } = useApi<{ gardeners: { username: string; species: number }[]; species: Species[] }>(
+    searching ? `/api/public/search?q=${encodeURIComponent(debounced)}` : null, [debounced]);
   return <div className="wrap section">
     <div className="almanac-top"><FlowerOfTheDay /><CommissionCard /></div>
     <div className="section-head">
       <h2>Almanac</h2>
-      <div className="tabs">
+      <input className="search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search gardeners and species" aria-label="Search gardeners and species" />
+      {!searching && <div className="tabs">
         {(["species", "recent", "top"] as const).map((t) => <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
           {t === "species" ? `Species${species ? ` · ${species.length}` : ""}` : t === "recent" ? "Just grown" : "Rarest"}</button>)}
-      </div>
+      </div>}
     </div>
-    {tab === "species" && <div className="side almanac-grid" style={{ gridTemplateColumns: "minmax(0,3fr) minmax(0,1fr)", alignItems: "start" }}>
+    {searching && <div className="search-results">
+      {!found ? <span className="spin" /> : <>
+        {found.gardeners.length > 0 && <div className="row" style={{ marginBottom: 14 }}>
+          {found.gardeners.map((g) => <Link key={g.username} to={`/u/${encodeURIComponent(g.username)}`} className="claim">
+            <b>{g.username}</b><span className="faint">{g.species} species</span></Link>)}
+        </div>}
+        {found.species.length > 0 && <div className="blooms">
+          {found.species.map((s) => s.genome && <BloomCard key={s.name} to={s.alive ? `/b/${s.bloomId}` : undefined}
+            b={{ id: s.bloomId, genome: s.genome, species: s.name, rarity: s.rarity } as Bloom}
+            extra={<div className="faint">found by {s.discoverer} · {s.count} grown</div>} />)}
+        </div>}
+        {!found.gardeners.length && !found.species.length && <p className="muted">Nothing matches "{debounced}".</p>}
+      </>}
+    </div>}
+    {!searching && tab === "species" && <div className="side almanac-grid" style={{ gridTemplateColumns: "minmax(0,3fr) minmax(0,1fr)", alignItems: "start" }}>
       <div className="blooms">
-        {species?.map((s) => s.genome && <BloomCard key={s.name} to={`/b/${s.bloomId}`}
+        {species?.map((s) => s.genome && <BloomCard key={s.name} to={s.alive ? `/b/${s.bloomId}` : undefined}
           b={{ id: s.bloomId, genome: s.genome, species: s.name, rarity: s.rarity } as Bloom}
           extra={<div className="faint">found by {s.discoverer} · {s.count} grown</div>} />)}
         {species?.length === 0 && <p className="muted">Nothing discovered yet. Be the first!</p>}
@@ -85,7 +106,7 @@ export function Almanac() {
         {leaders?.length === 0 && <p className="faint">No one yet.</p>}
       </div>
     </div>}
-    {tab !== "species" && <div className="blooms">
+    {!searching && tab !== "species" && <div className="blooms">
       {blooms?.map((b) => <BloomCard key={b.id} b={b} to={`/b/${b.id}`} extra={<div className="faint">by {b.grower}</div>} />)}
     </div>}
   </div>;

@@ -390,3 +390,34 @@ export function renderFlower(g: Genome, opts: RenderOpts = {}): string {
 function wrapSvg(body: string[], defs: string[]): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 220">${defs.length ? `<defs>${defs.join("")}</defs>` : ""}${body.join("")}</svg>`;
 }
+
+/** A representative (hue, sat, lum) for each colour family name. */
+const COLOUR_REP: Record<string, [number, number, number]> = {
+  Midnight: [250, 70, 27], Pearl: [40, 30, 74], Ash: [40, 30, 50],
+  Blush: [0, 70, 76], Peach: [45, 70, 76], Butter: [90, 70, 76], Mint: [150, 70, 76], Frost: [225, 70, 76], Lilac: [270, 70, 76], Rose: [315, 70, 76],
+  Crimson: [2, 82, 52], Vermilion: [21, 82, 52], Amber: [38, 85, 52], Golden: [54, 85, 52], Citrine: [71, 80, 50],
+  Jade: [120, 70, 48], Teal: [172, 70, 45], Azure: [195, 80, 52], Cobalt: [225, 80, 52], Indigo: [255, 75, 55],
+  Amethyst: [280, 70, 55], Orchid: [305, 70, 55], Magenta: [335, 80, 55],
+};
+
+/**
+ * Rebuild a representative flower from a species name ("Luminous Tiger Cobalt Lily"). Used to draw
+ * species whose first flower no longer exists. Returns null for a name it doesn't recognise.
+ */
+export function genomeFromSpecies(name: string): Genome | null {
+  let rest = name.trim();
+  const take = (word: string) => { if (rest.startsWith(word + " ")) { rest = rest.slice(word.length + 1); return true; } return false; };
+  const glow = take("Luminous");
+  const iridescent = take("Opaline");
+  let pattern = 0;
+  for (let i = PATTERNS.length - 1; i >= 1; i--) if (take(PATTERNS[i])) { pattern = i; break; }
+  const [colour, shapeName, ...extra] = rest.split(" ");
+  const shape = SHAPES.indexOf(shapeName as (typeof SHAPES)[number]);
+  const hsl = COLOUR_REP[colour];
+  if (extra.length || shape < 0 || !hsl) return null;
+  const [hue, sat, lum] = hsl;
+  return {
+    hue, hue2: (hue + 150) % 360, sat, lum, petals: shape === 6 ? 8 : 6, shape, layers: shape === 5 ? 2 : 1, pattern,
+    center: 0, centerHue: 48, stem: 0.4, leaves: 2, curl: 0.1, glow, iridescent,
+  };
+}

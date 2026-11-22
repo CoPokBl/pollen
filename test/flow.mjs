@@ -205,4 +205,16 @@ const fotd = (await bob.json("GET", "/api/public/flower-of-the-day")).flower;
 assert(fotd && fotd.bloomId === fav.id && fotd.reason === "reactions" && fotd.grower === "alice", "flower of the day is the most-reacted flower");
 const again2 = (await bob.json("GET", "/api/public/flower-of-the-day")).flower;
 assert(again2.bloomId === fotd.bloomId, "the pick is fixed for the day");
+// Almanac search (#13)
+let found = await bob.json("GET", "/api/public/search?q=ALI");
+assert(found.gardeners.some((g) => g.username === "alice"), "search finds gardeners, case-insensitively");
+const anySpecies = (await bob.json("GET", "/api/public/almanac"))[0];
+found = await bob.json("GET", "/api/public/search?q=" + encodeURIComponent(anySpecies.name.split(" ").pop()));
+assert(found.species.some((x) => x.name === anySpecies.name), "search finds species by name");
+found = await bob.json("GET", "/api/public/search?q=" + encodeURIComponent("%%"));
+assert(found.gardeners.length === 0 && found.species.length === 0, "% is matched literally, not as a wildcard");
+found = await bob.json("GET", "/api/public/search?q=a");
+assert(found.gardeners.length === 0, "one-letter searches return nothing");
+const alm = await bob.json("GET", "/api/public/almanac");
+assert(alm.length > 0 && alm.every((x) => x.genome) && alm.some((x) => !x.alive), "species whose first flower was composted still have art");
 console.log("ALL PASSED");

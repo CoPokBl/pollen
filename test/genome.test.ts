@@ -107,3 +107,20 @@ describe("weekly commissions (#2)", async () => {
     expect(matches(c, plain, 0)).toBe(false);
   });
 });
+
+describe("species art fallback", async () => {
+  const { genomeFromSpecies, speciesName, SHAPES } = await import("../shared/genome.ts");
+  it("rebuilds every species name exactly", () => {
+    const r = mulberry32(21);
+    const seen = new Set<string>();
+    for (let i = 0; i < 60000; i++) seen.add(speciesName(wildGenome(r, (i % 9) + 1)));
+    expect(seen.size).toBeGreaterThan(400);
+    for (const name of seen) {
+      const g = genomeFromSpecies(name);
+      expect(g, name).not.toBeNull();
+      expect(speciesName(g!), name).toBe(name);
+    }
+    expect(genomeFromSpecies("Not A Flower")).toBeNull();
+    expect(SHAPES.length).toBe(7);
+  });
+});

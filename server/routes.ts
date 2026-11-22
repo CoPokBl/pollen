@@ -7,10 +7,13 @@ import * as eco from "./economy.ts";
 import { serble, SerbleError } from "./serble.ts";
 import { commissionView, claimCommission } from "./commissions.ts";
 import { react, reactionSummary, flowerOfTheDay } from "./social.ts";
-import { renderFlower, validGenome, crossOdds } from "../shared/genome.ts";
+import { renderFlower, validGenome, crossOdds, genomeFromSpecies } from "../shared/genome.ts";
 
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 const num = (v: unknown) => (typeof v === "number" ? v : Number(v));
+
+/** A species for the Almanac. If its first flower was composted, draw it from its name instead. */
+const speciesRow = (r: any) => ({ ...r, alive: !!r.genome, genome: r.genome ? JSON.parse(r.genome) : genomeFromSpecies(r.name) });
 
 export function registerRoutes(app: FastifyInstance) {
   app.setErrorHandler((err, req, reply) => {
@@ -79,13 +82,27 @@ export function registerRoutes(app: FastifyInstance) {
   app.get("/api/public/almanac", async () => {
     return db.prepare(`SELECT s.name, s.rarity, s.count, s.discovered_at AS discoveredAt, u.username AS discoverer, s.first_bloom_id AS bloomId,
                               b.genome FROM species s LEFT JOIN users u ON u.id = s.first_user_id LEFT JOIN blooms b ON b.id = s.first_bloom_id
-                       ORDER BY s.discovered_at DESC LIMIT 500`).all().map((r: any) => ({ ...r, genome: r.genome ? JSON.parse(r.genome) : null }));
+                       ORDER BY s.discovered_at DESC LIMIT 500`).all().map(speciesRow);
   });
 
   app.get("/api/public/u/:username", async (req, reply) => {
     const p = game.profileView(str((req.params as any).username).slice(0, 255));
     if (!p) return reply.code(404).send({ error: "No gardener by that name." });
     return p;
+  });
+
+  // Almanac search (#13): gardeners by name, species by name. Plain substring match, case-insensitive.
+  app.get("/api/public/search", async (req) => {
+    const q = str((req.query as any).q).trim().slice(0, 60);
+    if (q.length < 2) return { gardeners: [], species: [] };
+    const like = "%" + q.replace(/[\\%_]/g, (c) => "\\" + c) + "%";
+    const gardeners = db.prepare(`SELECT u.username, (SELECT COUNT(*) FROM species s WHERE s.first_user_id = u.id) AS species
+                                  FROM users u WHERE u.username LIKE ? ESCAPE '\\' ORDER BY species DESC, u.username LIMIT 10`).all(like);
+    const species = db.prepare(`SELECT s.name, s.rarity, s.count, s.first_bloom_id AS bloomId, u.username AS discoverer, b.genome
+                                FROM species s LEFT JOIN users u ON u.id = s.first_user_id LEFT JOIN blooms b ON b.id = s.first_bloom_id
+                                WHERE s.name LIKE ? ESCAPE '\\' ORDER BY s.count ASC, s.name LIMIT 24`).all(like)
+      .map(speciesRow);
+    return { gardeners, species };
   });
 
   app.get("/api/public/flower-of-the-day", async () => ({ flower: flowerOfTheDay() }));
