@@ -154,7 +154,7 @@ if (gAl.fertiliser >= gAl.fertiliseCost) {
 // weekly commissions (#2)
 const { exampleGenome } = await import("../shared/commission.ts");
 const com = await alice.json("GET", "/api/commission");
-assert(com.title && com.requirements.length === 2 && com.claims.length === 0, "this week's commission: " + com.title);
+assert(com.title && com.requirements.length >= 2 && com.requirements.some((q) => q.kind === "generation") && com.claims.length === 0, "this week's commission: " + com.title);
 const base = { hue: 30, hue2: 200, sat: 60, lum: 55, petals: 6, shape: 0, layers: 1, pattern: 0, center: 0, centerHue: 50, stem: 0.5, leaves: 2, curl: 0, glow: false, iridescent: false };
 const winning = exampleGenome(com, base);
 await alice.json("POST", "/__mock/set-app-balance", { raw: String(30n << 24n) });        // enough for first place only
