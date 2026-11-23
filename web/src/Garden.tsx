@@ -29,7 +29,7 @@ const originLabel = (s: { origin: string; generation: number }) =>
   s.origin === "hybrid" ? `Hybrid · gen ${s.generation}` : s.origin === "packet" ? "Premium" : "Wild";
 
 export default function Garden() {
-  const { config, refreshBalance } = useSession();
+  const { config, refreshBalance, balance } = useSession();
   const { data, reload, setData } = useApi<GardenData>("/api/garden");
   const [picked, setPicked] = useState<string | null>(null);
   // Tap a tool to pick it up, then tap plants to use it (an alternative to dragging, #16).
@@ -73,6 +73,8 @@ export default function Garden() {
     if (kind === "packet") {
       if (status === "Approved") toast("Your seed packet arrived. Check your pouch!");
       else if (status === "Pending") toast("Still waiting on serble.net. We'll pick it up when it's approved.");
+      else if (status === "Failed") toast(`Serble couldn't take the payment. A packet costs ${config?.prices.packet.coins ?? "10"} coins; check your Serble balance.`, true);
+      else if (status === "Denied") toast("No problem, the packet wasn't bought.");
       else toast("The packet purchase didn't go through.", true);
     }
     refreshBalance();
@@ -193,13 +195,18 @@ export default function Garden() {
       <div className="card pad">
         <h3>Premium seed packet</h3>
         <p className="muted">{config?.prices.packet.seeds ?? 3} seeds with much better odds of rare forms, glowing and opaline petals.</p>
-        <div className="row">
-          <button className="btn" disabled={busy} onClick={async () => {
-            const r = await run(() => api<{ consentUrl: string }>("/api/shop/packet", {}));
-            if (r) toConsent(r.consentUrl);
-          }}>Buy for <Coins n={config?.prices.packet.coins ?? "?"} /></button>
-          <span className="faint">You'll confirm on serble.net.</span>
-        </div>
+        {(() => {
+          const price = Number(config?.prices.packet.coins ?? 0);
+          const short = balance !== null && price > 0 && Number(balance) < price;
+          return <div className="row">
+            <button className="btn" disabled={busy || short} onClick={async () => {
+              const r = await run(() => api<{ consentUrl: string }>("/api/shop/packet", {}));
+              if (r) toConsent(r.consentUrl);
+            }}>Buy for <Coins n={config?.prices.packet.coins ?? "?"} /></button>
+            <span className="faint">{short ? `You have ${balance} coins, so you need ${(Math.ceil((price - Number(balance)) * 100) / 100)} more.`
+              : balance !== null ? `You have ${balance} coins. You'll confirm on serble.net.` : "You'll confirm on serble.net."}</span>
+          </div>;
+        })()}
       </div>
     </div>
 
