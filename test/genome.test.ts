@@ -93,8 +93,11 @@ describe("weekly commissions (#2)", async () => {
     const titles = new Set<string>();
     for (let w = 0; w < 400; w++) {
       const c = commissionFor(w);
-      expect(c.requirements.length).toBe(2);
+      expect(c.requirements.length).toBeGreaterThanOrEqual(2);
+      expect(c.requirements.some((q) => q.kind === "generation"), c.title).toBe(true);   // always needs breeding
       expect(matches(c, exampleGenome(c, base), 5), c.title).toBe(true);
+      expect(matches(c, exampleGenome(c, base), 0), c.title).toBe(false);              // a packet flower never qualifies
+      if (w > 0) expect(c.requirements[0].kind + c.requirements[0].value, `week ${w} repeats`).not.toBe(commissionFor(w - 1).requirements[0].kind + commissionFor(w - 1).requirements[0].value);
       expect(c.title).toMatch(/^An? [a-zA-Z-]/);
       titles.add(c.title);
     }

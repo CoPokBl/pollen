@@ -33,12 +33,27 @@ function flavours(hard: Requirement): Requirement[] {
   return out;
 }
 
+// The hard trait for a week: random, but never the same as the week before.
+const hardMemo = new Map<number, number>();
+function hardIndex(week: number): number {
+  if (week < 0) return -1;
+  const hit = hardMemo.get(week);
+  if (hit !== undefined) return hit;
+  let i = Math.floor(mulberry32(week * 7919 + 17)() * HARD.length);
+  if (i === hardIndex(week - 1)) i = (i + 1) % HARD.length;
+  hardMemo.set(week, i);
+  return i;
+}
+
+/** Every target needs breeding: a packet seed is generation 0 (#15). */
+const BRED: Requirement = { kind: "generation", value: 2, label: "Generation 2 or later" };
+
 export function commissionFor(week: number): Commission {
-  const r = mulberry32(week * 7919 + 17);
-  const hard = HARD[Math.floor(r() * HARD.length)];
+  const r = mulberry32(week * 104729 + 3);
+  const hard = HARD[hardIndex(week)];
   const options = flavours(hard);
   const flavour = options[Math.floor(r() * options.length)];
-  const requirements = [hard, flavour];
+  const requirements = flavour.kind === "generation" ? [hard, flavour] : [hard, flavour, BRED];
   return { week, start: weekStart(week), end: weekStart(week + 1), title: describe(requirements), requirements };
 }
 
