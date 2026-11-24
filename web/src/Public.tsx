@@ -134,13 +134,7 @@ export function BloomPage({ id }: { id: string }) {
         </div>
       </div>
     </div>
-    {b.parentBlooms && <div className="section">
-      <h3>Parents</h3>
-      <div className="lineage">
-        {b.parentBlooms.map((p) => p.missing ? <span key={p.id} className="faint">(composted)</span>
-          : <BloomCard key={p.id} b={p} to={`/b/${p.id}`} />)}
-      </div>
-    </div>}
+    {b.parentBlooms && <FamilyTree id={b.id} />}
     {b.children.length > 0 && <div className="section">
       <h3>Offspring</h3>
       <div className="lineage">{b.children.map((c) => <BloomCard key={c.id} b={c} to={`/b/${c.id}`} />)}</div>
@@ -198,5 +192,31 @@ export function ProfilePage({ username }: { username: string }) {
       <h3>First to discover</h3>
       <div className="blooms">{p.discoveries.map((b) => <BloomCard key={b.id} b={b} to={`/b/${b.id}`} />)}</div>
     </div>}
+  </div>;
+}
+
+interface TreeNode { id: string; missing?: boolean; species?: string; rarity?: string; genome?: Genome; generation?: number; grower?: string | null; parents: TreeNode[] }
+
+/** Pedigree chart: the flower on the left, its ancestors branching to the right (#4). */
+function FamilyTree({ id }: { id: string }) {
+  const { data } = useApi<TreeNode>(`/api/public/bloom/${id}/lineage`, [id]);
+  if (!data || !data.parents.length) return null;
+  const depth = (n: TreeNode): number => n.parents.length ? 1 + Math.max(...n.parents.map(depth)) : 0;
+  return <div className="section">
+    <h3>Family tree <span className="faint" style={{ fontSize: ".85rem", fontWeight: 600 }}>· {depth(data)} generation{depth(data) === 1 ? "" : "s"} back</span></h3>
+    <div className="pedigree-scroll"><Pedigree node={data} root /></div>
+  </div>;
+}
+
+function Pedigree({ node, root }: { node: TreeNode; root?: boolean }) {
+  const card = node.missing
+    ? <div className="ped-card missing"><span>composted</span></div>
+    : <Link to={`/b/${node.id}`} className={"ped-card" + (root ? " root" : "")}>
+        <div className="ped-art"><Flower genome={{ ...node.genome!, stem: 0.35, curl: 0.1 }} uid={"pd" + node.id} head /></div>
+        <div className="ped-text"><b>{node.species}</b><span className="faint">{node.generation ? `gen ${node.generation}` : "wild"}{node.grower ? ` · ${node.grower}` : ""}</span></div>
+      </Link>;
+  return <div className="ped-node">
+    {card}
+    {node.parents.length > 0 && <div className="ped-parents">{node.parents.map((p, i) => <Pedigree key={p.id + i} node={p} />)}</div>}
   </div>;
 }

@@ -237,4 +237,9 @@ const stolen = await alice.json("POST", "/api/gift", { bloomId: gift.id, to: "bo
 assert(String(stolen).includes("isn't in your vase"), "alice can't gift it again");
 const gp = await bob.json("GET", "/api/public/bloom/" + gift.id);
 assert(gp.grower === "alice" && gp.owner === "bob", "a gift keeps its grower");
+// family tree (#4)
+const lt = await bob.json("GET", `/api/public/bloom/${gift.id}/lineage`);
+assert(lt.id === gift.id && Array.isArray(lt.parents), "lineage endpoint returns a tree");
+const lt404 = await fetch(BASE + "/api/public/bloom/nope/lineage");
+assert(lt404.status === 404, "lineage of an unknown flower is 404");
 console.log("ALL PASSED");

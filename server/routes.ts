@@ -69,6 +69,11 @@ export function registerRoutes(app: FastifyInstance) {
     return { ...game.bloomView(b), grower: b.grower, owner: b.state === "exported" ? null : b.owner, parentBlooms: parents, children };
   });
 
+  app.get("/api/public/bloom/:id/lineage", async (req, reply) => {
+    const t = game.lineage(str((req.params as any).id), 4);
+    return t ?? reply.code(404).send({ error: "No such flower." });
+  });
+
   app.get("/api/public/stats", async () => {
     const one = (sql: string) => (db.prepare(sql).get() as { n: number }).n;
     return {

@@ -371,3 +371,24 @@ export function newGifts(userId: string) {
 export function markGiftsSeen(userId: string) {
   db.prepare("UPDATE gifts SET seen = 1 WHERE to_id = ? AND seen = 0").run(userId);
 }
+
+// ------------------------------------------------------------------ family tree (#4)
+
+export interface LineageNode { id: string; missing?: boolean; species?: string; rarity?: string; genome?: Genome; generation?: number; grower?: string | null; parents: LineageNode[] }
+
+/** Ancestors of a flower, up to `depth` generations back. Composted ancestors appear as missing. */
+export function lineage(id: string, depth = 4): LineageNode | null {
+  const get = db.prepare(`SELECT b.id, b.species, b.rarity, b.genome, b.generation, b.parents, u.username AS grower
+                          FROM blooms b LEFT JOIN users u ON u.id = b.grower_id WHERE b.id = ?`);
+  const visit = (bid: string, d: number): LineageNode => {
+    const r = get.get(bid) as any;
+    if (!r) return { id: bid, missing: true, parents: [] };
+    const parents: string[] = r.parents ? JSON.parse(r.parents) : [];
+    return {
+      id: r.id, species: r.species, rarity: r.rarity, genome: JSON.parse(r.genome), generation: r.generation, grower: r.grower,
+      parents: d > 0 ? parents.slice(0, 2).map((p) => visit(p, d - 1)) : [],
+    };
+  };
+  if (!get.get(id)) return null;
+  return visit(id, Math.max(0, Math.min(depth, 5)));
+}
