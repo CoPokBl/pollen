@@ -127,3 +127,27 @@ describe("species art fallback", async () => {
     expect(SHAPES.length).toBe(7);
   });
 });
+
+describe("commission breeding tips", async () => {
+  const { commissionFor, breedingTip } = await import("../shared/commission.ts");
+  it("every requirement of every week has a tip", () => {
+    for (let w = 0; w < 200; w++) for (const q of commissionFor(w).requirements) expect(breedingTip(q).length, q.label).toBeGreaterThan(10);
+  });
+});
+
+describe("tip numbers match the genetics", () => {
+  it("form, pattern, layers and Midnight inherit at the advertised rates", () => {
+    const r = mulberry32(31); const N = 20000;
+    let shape1 = 0, shape2 = 0, mid1 = 0, mid2 = 0;
+    for (let i = 0; i < N; i++) {
+      const a = { ...wildGenome(r), shape: 5, lum: 27 };
+      if (breed(a, { ...wildGenome(r), shape: 1 }, r).shape === 5) shape1++;
+      if (breed(a, { ...a }, r).shape === 5) shape2++;
+      const b = { ...wildGenome(r), lum: 60 };
+      if (breed(a, b, r).lum < 33) mid1++;
+      if (breed(a, { ...wildGenome(r), lum: 28 }, r).lum < 33) mid2++;
+    }
+    const near = (n: number, pct: number, tol = 4) => expect(Math.abs((n / N) * 100 - pct)).toBeLessThan(tol);
+    near(shape1, 47); near(shape2, 93); near(mid1, 20, 6); near(mid2, 92);
+  });
+});

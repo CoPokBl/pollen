@@ -110,3 +110,16 @@ export function exampleGenome(c: Commission, base: Genome): Genome {
   }
   return g;
 }
+
+/** How a requirement is inherited, measured from breed(): shown on the commission card. */
+export function breedingTip(q: Requirement): string {
+  switch (q.kind) {
+    case "glow": case "iridescent": return "35% from one parent that has it, 85% if both do.";
+    case "shape": case "pattern": case "layers": return "About 47% from one parent that has it, 93% if both do.";
+    case "colour": return q.value === "Midnight"
+      ? "Brightness blends: about 20% from one Midnight parent, 92% from two."
+      : "Colours blend between the parents: cross two flowers close to this colour.";
+    case "generation": return "Cross two flowers, then cross their offspring. Packet seeds are generation 0.";
+    default: return "";
+  }
+}

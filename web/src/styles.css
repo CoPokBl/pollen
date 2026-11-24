@@ -366,3 +366,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .ped-art > div, .ped-art svg { width: 100%; height: 100%; display: block; }
 .ped-text { display: flex; flex-direction: column; min-width: 0; font-size: .8rem; line-height: 1.25; }
 .ped-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tips { margin: 8px 0 4px; padding-left: 18px; font-size: .88rem; color: var(--ink-2); }
+.tips li { margin: 2px 0; }
+.tips-details { margin: 6px 0; font-size: .88rem; }
+.tips-details summary { cursor: pointer; font-weight: 700; color: var(--ink-2); }

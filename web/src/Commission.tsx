@@ -1,7 +1,7 @@
 // The weekly commission card (#2), shown in the garden and the Almanac.
 import { useState } from "react";
 import { api, useApi, useAction, useNow, useSession, Flower, Coins, Link, fmtDuration } from "./lib";
-import { exampleGenome, type Requirement } from "../../shared/commission";
+import { exampleGenome, breedingTip, type Requirement } from "../../shared/commission";
 import { wildGenome, mulberry32, type Genome } from "../../shared/genome";
 
 interface CommissionData {
@@ -30,7 +30,10 @@ export function CommissionCard({ compact }: { compact?: boolean }) {
     <div className="commission-body">
       <div className="faint commission-kicker">Weekly commission · {left > 0 ? `${fmtDuration(left)} left` : "ending"}</div>
       <h3>{c.title}</h3>
-      <div className="row" style={{ gap: 6 }}>{c.requirements.map((q) => <span key={q.kind + q.value} className="pill">{q.label}</span>)}</div>
+      <div className="row" style={{ gap: 6 }}>{c.requirements.map((q) => <span key={q.kind + q.value} className="pill" title={breedingTip(q)}>{q.label}</span>)}</div>
+      {!compact && <ul className="tips">{c.requirements.map((q) => <li key={q.kind + q.value}><b>{q.label}:</b> {breedingTip(q)}</li>)}</ul>}
+      {compact && <details className="tips-details"><summary>Breeding tips</summary>
+        <ul className="tips">{c.requirements.map((q) => <li key={q.kind + q.value}><b>{q.label}:</b> {breedingTip(q)}</li>)}</ul></details>}
       <p className="muted" style={{ margin: "8px 0" }}>
         Breed one this week. The first three gardeners win {c.rewards.map((r, i) => <span key={i}>{i ? (i === c.rewards.length - 1 ? " and " : ", ") : ""}<Coins n={r} /></span>)}.
         {prizesLeft === 0 ? " All prizes have been won, but you can still complete it." : ""}
