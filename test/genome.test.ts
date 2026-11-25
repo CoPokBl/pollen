@@ -151,3 +151,32 @@ describe("tip numbers match the genetics", () => {
     near(shape1, 47); near(shape2, 93); near(mid1, 20, 6); near(mid2, 92);
   });
 });
+
+describe("continuous growth (#18)", async () => {
+  const { renderFlower } = await import("../shared/genome.ts");
+  it("is unchanged at full bloom and renders cleanly at every point", () => {
+    const r = mulberry32(44);
+    for (let i = 0; i < 100; i++) {
+      const g = wildGenome(r, 5);
+      for (let p = 0; p < 1; p += 0.05) {
+        const svg = renderFlower(g, { progress: p, soil: true, uid: "t" });
+        expect(svg.startsWith("<svg")).toBe(true);
+        expect(svg).not.toMatch(/NaN|undefined|Infinity/);
+      }
+      expect(renderFlower(g, { progress: 1, uid: "t" })).toBe(renderFlower(g, { uid: "t" }));
+    }
+  });
+  it("the hidden-genome stand-in draws exactly the same until the head opens", () => {
+    const r = mulberry32(45);
+    for (let i = 0; i < 200; i++) {
+      const g = wildGenome(r, 5);
+      // what the server sends before the bud stage, and how the garden builds its stand-in
+      const hint = { hue: g.hue, sat: g.sat, lum: g.lum, stem: g.stem, curl: g.curl, leaves: g.leaves, leafTone: ((g.hue2 % 40) + 40) % 40 };
+      const stand = { hue: hint.hue, hue2: hint.leafTone, sat: hint.sat, lum: hint.lum, petals: 5, shape: 0, layers: 1, pattern: 0, center: 0,
+        centerHue: 50, stem: hint.stem, leaves: hint.leaves, curl: hint.curl, glow: false, iridescent: false };
+      for (const p of [0.05, 0.2, 0.4, 0.55, 0.6, 0.65, 0.7]) {
+        expect(renderFlower(stand, { progress: p, soil: true, uid: "s" }), `p=${p}`).toBe(renderFlower(g, { progress: p, soil: true, uid: "s" }));
+      }
+    }
+  });
+});

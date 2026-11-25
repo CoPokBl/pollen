@@ -312,7 +312,9 @@ export function gardenView(userId: string) {
       plant: {
         // The genome is only revealed once it blooms; until then only the colour hints through.
         genome: progress >= 0.6 ? g : null,
-        hint: { hue: g.hue, sat: g.sat, lum: g.lum },
+        // What's visible while growing (colour, stem, leaves, leaf tint), so the drawing doesn't
+        // jump when the rest of the genome is revealed at the bud stage (#18).
+        hint: { hue: g.hue, sat: g.sat, lum: g.lum, stem: g.stem, curl: g.curl, leaves: g.leaves, leafTone: ((g.hue2 % 40) + 40) % 40 },
         origin: p.origin,
         generation: p.generation,
         stage: stageOf(progress),

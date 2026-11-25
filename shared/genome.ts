@@ -252,11 +252,16 @@ export interface RenderOpts {
   /** Animate glow/iridescence. */
   animate?: boolean;
   background?: string;
+  /** Continuous growth from 0 (just planted) to 1 (in full bloom). Overrides `stage` (#18). */
+  progress?: number;
+  /** Internal: draw only the flower head, centred at (x, y), scaled and faded. */
+  head?: { x: number; y: number; scale: number; opacity: number };
 }
 
 /** Returns a complete <svg> string for a flower at a growth stage. viewBox 0 0 200 220. */
 export function renderFlower(g: Genome, opts: RenderOpts = {}): string {
-  const stage = opts.stage ?? "bloom";
+  if (opts.progress !== undefined && opts.progress < 1 && !opts.head) return renderGrowing(g, Math.max(0, opts.progress), opts);
+  const stage = opts.head ? "bloom" : opts.stage ?? "bloom";
   const id = (opts.uid ?? "f" + hashString(JSON.stringify(g)).toString(36)).replace(/[^a-zA-Z0-9_-]/g, "");
   const rnd = mulberry32(hashString(JSON.stringify(g)));
   const out: string[] = [];
@@ -267,13 +272,14 @@ export function renderFlower(g: Genome, opts: RenderOpts = {}): string {
   const leafC = hsl(110 + (g.hue2 % 40), 38, 34);
   const leafD = hsl(120 + (g.hue2 % 40), 40, 26);
 
-  if (opts.background) out.push(`<rect width="200" height="220" fill="${opts.background}"/>`);
+  if (opts.background && !opts.head) out.push(`<rect width="200" height="220" fill="${opts.background}"/>`);
 
   const groundY = 196;
   const stemLen = stage === "seed" ? 0 : stage === "sprout" ? 34 : 70 + g.stem * 50;
-  const headX = 100 + (stage === "bloom" || stage === "bud" ? g.curl * 10 : 0);
-  const headY = groundY - stemLen;
+  const headX = opts.head ? opts.head.x : 100 + (stage === "bloom" || stage === "bud" ? g.curl * 10 : 0);
+  const headY = opts.head ? opts.head.y : groundY - stemLen;
 
+  if (opts.head) return wrapSvg(bloomHead(), defs, opts.head.opacity);
   if (opts.soil) {
     out.push(`<ellipse cx="100" cy="${groundY + 6}" rx="62" ry="13" fill="#6b4a33"/>`);
     out.push(`<ellipse cx="100" cy="${groundY + 2}" rx="54" ry="9" fill="#82593d"/>`);
@@ -308,87 +314,94 @@ export function renderFlower(g: Genome, opts: RenderOpts = {}): string {
   }
 
   // ---- bloom
-  const R = 44 + (g.petals < 6 ? 6 : 0);
-  // petal fill per pattern
-  const gradId = `${id}-pg`;
-  let petalFill = base;
-  if (g.pattern === 1 || g.pattern === 4) {
-    const tip = g.pattern === 4 ? 0.62 : 0;
-    defs.push(`<linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="${-R}" gradientUnits="userSpaceOnUse">` +
-      `<stop offset="0" stop-color="${g.pattern === 1 ? second : base}"/>` +
-      (g.pattern === 4 ? `<stop offset="${tip}" stop-color="${base}"/>` : "") +
-      `<stop offset="1" stop-color="${g.pattern === 1 ? base : second}"/></linearGradient>`);
-    petalFill = `url(#${gradId})`;
-  }
-  if (g.iridescent) {
-    defs.push(`<linearGradient id="${id}-ir" x1="0" y1="0" x2="1" y2="1">` +
-      [0, 60, 140, 220, 300].map((h, i) => `<stop offset="${i / 4}" stop-color="${hsl(g.hue + h, 90, 72)}"/>`).join("") +
-      (opts.animate ? `<animateTransform attributeName="gradientTransform" type="rotate" from="0 .5 .5" to="360 .5 .5" dur="8s" repeatCount="indefinite"/>` : "") +
-      `</linearGradient>`);
-  }
-  if (g.glow) {
-    defs.push(`<radialGradient id="${id}-gl"><stop offset="0" stop-color="${hsl(g.hue, 95, 70, 0.75)}"/><stop offset="1" stop-color="${hsl(g.hue, 95, 70, 0)}"/></radialGradient>`);
-    out.push(`<circle cx="${headX}" cy="${headY}" r="${R * 1.7}" fill="url(#${id}-gl)">` +
-      (opts.animate ? `<animate attributeName="opacity" values=".55;1;.55" dur="3.2s" repeatCount="indefinite"/>` : "") + `</circle>`);
-  }
-
-  out.push(`<g transform="translate(${headX.toFixed(1)} ${headY.toFixed(1)})">`);
-  for (let layer = g.layers - 1; layer >= 0; layer--) {
-    const scale = 1 - layer * 0.24;
-    const n = g.petals + (layer > 0 ? (layer % 2) : 0);
-    const r = R * scale;
-    const w = r * (g.shape === 6 ? 0.5 : g.shape === 3 ? 0.42 : 0.62) * (6 / Math.max(4, n)) ** 0.5;
-    const offset = layer * (180 / n) + g.curl * 12;
-    const shade = layer === 0 ? 0 : -layer * 6;
-    const fill = layer === 0 ? petalFill : (g.pattern === 1 || g.pattern === 4 ? petalFill : hsl(g.hue, g.sat, g.lum + shade));
-    const d = petalPath(g.shape, r, w);
-    for (let i = 0; i < n; i++) {
-      const rot = offset + (360 / n) * i;
-      out.push(`<g transform="rotate(${rot.toFixed(1)})">`);
-      out.push(`<path d="${d}" fill="${fill}" stroke="${deep}" stroke-width="0.9" stroke-linejoin="round"/>`);
-      if (g.pattern === 2) {
-        out.push(`<path d="M0 ${(-r * 0.12).toFixed(1)}L0 ${(-r * 0.8).toFixed(1)}" stroke="${second}" stroke-width="${(w * 0.22).toFixed(1)}" stroke-linecap="round" opacity=".85"/>`);
-      } else if (g.pattern === 3) {
-        for (let k = 0; k < 3; k++) {
-          const px = (rnd() - 0.5) * w * 0.7, py = -r * (0.3 + rnd() * 0.5);
-          out.push(`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${(1 + rnd() * 1.6).toFixed(1)}" fill="${second}"/>`);
-        }
-      }
-      if (g.iridescent) out.push(`<path d="${d}" fill="url(#${id}-ir)" opacity=".38"/>`);
-      out.push(`</g>`);
-    }
-  }
-  // centre
-  const cc = hsl(g.centerHue, 70, 48), cd = hsl(g.centerHue, 65, 30);
-  const cr = R * 0.2;
-  switch (g.center) {
-    case 0: out.push(`<circle r="${cr.toFixed(1)}" fill="${cc}" stroke="${cd}" stroke-width="1.2"/>`); break;
-    case 1: {
-      out.push(`<circle r="${cr.toFixed(1)}" fill="${cd}"/>`);
-      for (let i = 0; i < 10; i++) {
-        const a = (i / 10) * Math.PI * 2, rr = cr * (0.35 + (i % 2) * 0.35);
-        out.push(`<circle cx="${(Math.cos(a) * rr).toFixed(1)}" cy="${(Math.sin(a) * rr).toFixed(1)}" r="1.5" fill="${cc}"/>`);
-      }
-      break;
-    }
-    case 2: {
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2;
-        out.push(`<path d="M0 0L${(Math.cos(a) * cr * 1.5).toFixed(1)} ${(Math.sin(a) * cr * 1.5).toFixed(1)}" stroke="${cd}" stroke-width="1.2"/>`);
-        out.push(`<circle cx="${(Math.cos(a) * cr * 1.5).toFixed(1)}" cy="${(Math.sin(a) * cr * 1.5).toFixed(1)}" r="2" fill="${cc}"/>`);
-      }
-      out.push(`<circle r="${(cr * 0.5).toFixed(1)}" fill="${cc}"/>`);
-      break;
-    }
-    default:
-      out.push(`<circle r="${(cr * 1.1).toFixed(1)}" fill="${cd}"/><circle r="${(cr * 0.7).toFixed(1)}" fill="${cc}"/><circle r="${(cr * 0.3).toFixed(1)}" fill="${cd}"/>`);
-  }
-  out.push(`</g>`);
+  out.push(...bloomHead());
   return wrapSvg(out, defs);
+
+  function bloomHead(): string[] {
+    const o: string[] = [];
+    const hs = opts.head ? opts.head.scale : 1;
+    const R = 44 + (g.petals < 6 ? 6 : 0);
+    // petal fill per pattern
+    const gradId = `${id}-pg`;
+    let petalFill = base;
+    if (g.pattern === 1 || g.pattern === 4) {
+      const tip = g.pattern === 4 ? 0.62 : 0;
+      defs.push(`<linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="${-R}" gradientUnits="userSpaceOnUse">` +
+        `<stop offset="0" stop-color="${g.pattern === 1 ? second : base}"/>` +
+        (g.pattern === 4 ? `<stop offset="${tip}" stop-color="${base}"/>` : "") +
+        `<stop offset="1" stop-color="${g.pattern === 1 ? base : second}"/></linearGradient>`);
+      petalFill = `url(#${gradId})`;
+    }
+    if (g.iridescent) {
+      defs.push(`<linearGradient id="${id}-ir" x1="0" y1="0" x2="1" y2="1">` +
+        [0, 60, 140, 220, 300].map((h, i) => `<stop offset="${i / 4}" stop-color="${hsl(g.hue + h, 90, 72)}"/>`).join("") +
+        (opts.animate ? `<animateTransform attributeName="gradientTransform" type="rotate" from="0 .5 .5" to="360 .5 .5" dur="8s" repeatCount="indefinite"/>` : "") +
+        `</linearGradient>`);
+    }
+    if (g.glow) {
+      defs.push(`<radialGradient id="${id}-gl"><stop offset="0" stop-color="${hsl(g.hue, 95, 70, 0.75)}"/><stop offset="1" stop-color="${hsl(g.hue, 95, 70, 0)}"/></radialGradient>`);
+      o.push(`<circle cx="${headX}" cy="${headY}" r="${hs === 1 ? R * 1.7 : (R * 1.7 * hs).toFixed(1)}" fill="url(#${id}-gl)">` +
+        (opts.animate ? `<animate attributeName="opacity" values=".55;1;.55" dur="3.2s" repeatCount="indefinite"/>` : "") + `</circle>`);
+    }
+
+    o.push(`<g transform="translate(${headX.toFixed(1)} ${headY.toFixed(1)})${hs !== 1 ? ` scale(${hs.toFixed(3)})` : ""}">`);
+    for (let layer = g.layers - 1; layer >= 0; layer--) {
+      const scale = 1 - layer * 0.24;
+      const n = g.petals + (layer > 0 ? (layer % 2) : 0);
+      const r = R * scale;
+      const w = r * (g.shape === 6 ? 0.5 : g.shape === 3 ? 0.42 : 0.62) * (6 / Math.max(4, n)) ** 0.5;
+      const offset = layer * (180 / n) + g.curl * 12;
+      const shade = layer === 0 ? 0 : -layer * 6;
+      const fill = layer === 0 ? petalFill : (g.pattern === 1 || g.pattern === 4 ? petalFill : hsl(g.hue, g.sat, g.lum + shade));
+      const d = petalPath(g.shape, r, w);
+      for (let i = 0; i < n; i++) {
+        const rot = offset + (360 / n) * i;
+        o.push(`<g transform="rotate(${rot.toFixed(1)})">`);
+        o.push(`<path d="${d}" fill="${fill}" stroke="${deep}" stroke-width="0.9" stroke-linejoin="round"/>`);
+        if (g.pattern === 2) {
+          o.push(`<path d="M0 ${(-r * 0.12).toFixed(1)}L0 ${(-r * 0.8).toFixed(1)}" stroke="${second}" stroke-width="${(w * 0.22).toFixed(1)}" stroke-linecap="round" opacity=".85"/>`);
+        } else if (g.pattern === 3) {
+          for (let k = 0; k < 3; k++) {
+            const px = (rnd() - 0.5) * w * 0.7, py = -r * (0.3 + rnd() * 0.5);
+            o.push(`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${(1 + rnd() * 1.6).toFixed(1)}" fill="${second}"/>`);
+          }
+        }
+        if (g.iridescent) o.push(`<path d="${d}" fill="url(#${id}-ir)" opacity=".38"/>`);
+        o.push(`</g>`);
+      }
+    }
+    // centre
+    const cc = hsl(g.centerHue, 70, 48), cd = hsl(g.centerHue, 65, 30);
+    const cr = R * 0.2;
+    switch (g.center) {
+      case 0: o.push(`<circle r="${cr.toFixed(1)}" fill="${cc}" stroke="${cd}" stroke-width="1.2"/>`); break;
+      case 1: {
+        o.push(`<circle r="${cr.toFixed(1)}" fill="${cd}"/>`);
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * Math.PI * 2, rr = cr * (0.35 + (i % 2) * 0.35);
+          o.push(`<circle cx="${(Math.cos(a) * rr).toFixed(1)}" cy="${(Math.sin(a) * rr).toFixed(1)}" r="1.5" fill="${cc}"/>`);
+        }
+        break;
+      }
+      case 2: {
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          o.push(`<path d="M0 0L${(Math.cos(a) * cr * 1.5).toFixed(1)} ${(Math.sin(a) * cr * 1.5).toFixed(1)}" stroke="${cd}" stroke-width="1.2"/>`);
+          o.push(`<circle cx="${(Math.cos(a) * cr * 1.5).toFixed(1)}" cy="${(Math.sin(a) * cr * 1.5).toFixed(1)}" r="2" fill="${cc}"/>`);
+        }
+        o.push(`<circle r="${(cr * 0.5).toFixed(1)}" fill="${cc}"/>`);
+        break;
+      }
+      default:
+        o.push(`<circle r="${(cr * 1.1).toFixed(1)}" fill="${cd}"/><circle r="${(cr * 0.7).toFixed(1)}" fill="${cc}"/><circle r="${(cr * 0.3).toFixed(1)}" fill="${cd}"/>`);
+    }
+    o.push(`</g>`);
+    return o;
+  }
 }
 
-function wrapSvg(body: string[], defs: string[]): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 220">${defs.length ? `<defs>${defs.join("")}</defs>` : ""}${body.join("")}</svg>`;
+function wrapSvg(body: string[], defs: string[], opacity = 1): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 220"${opacity < 1 ? ` opacity="${opacity.toFixed(3)}"` : ""}>${defs.length ? `<defs>${defs.join("")}</defs>` : ""}${body.join("")}</svg>`;
 }
 
 /** A representative (hue, sat, lum) for each colour family name. */
@@ -420,4 +433,75 @@ export function genomeFromSpecies(name: string): Genome | null {
     hue, hue2: (hue + 150) % 360, sat, lum, petals: shape === 6 ? 8 : 6, shape, layers: shape === 5 ? 2 : 1, pattern,
     center: 0, centerHue: 48, stem: 0.4, leaves: 2, curl: 0.1, glow, iridescent,
   };
+}
+
+const smoothstep = (a: number, b: number, x: number) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+
+/**
+ * A plant part-way through growing, for any progress in [0, 1): the stem rises, leaves unfurl,
+ * a bud swells and the head opens. Every part eases into its full-bloom position, so progress
+ * approaching 1 meets renderFlower's bloom exactly (#18).
+ */
+function renderGrowing(g: Genome, p: number, opts: RenderOpts): string {
+  const id = (opts.uid ?? "f" + hashString(JSON.stringify(g)).toString(36)).replace(/[^a-zA-Z0-9_-]/g, "");
+  const out: string[] = [];
+  const defs: string[] = [];
+  const base = hsl(g.hue, g.sat, g.lum);
+  const deep = hsl(g.hue, g.sat, g.lum - 14);
+  const leafC = hsl(110 + (g.hue2 % 40), 38, 34);
+  const leafD = hsl(120 + (g.hue2 % 40), 40, 26);
+  const f = (n: number) => n.toFixed(1);
+  if (opts.background) out.push(`<rect width="200" height="220" fill="${opts.background}"/>`);
+
+  const groundY = 196;
+  const stemT = smoothstep(0.06, 0.72, p);
+  const curlT = smoothstep(0.3, 0.9, p);
+  const stemLen = (70 + g.stem * 50) * stemT;
+  const headX = 100 + g.curl * 10 * curlT;
+  const headY = groundY - stemLen;
+
+  if (opts.soil) {
+    out.push(`<ellipse cx="100" cy="${groundY + 6}" rx="62" ry="13" fill="#6b4a33"/>`);
+    out.push(`<ellipse cx="100" cy="${groundY + 2}" rx="54" ry="9" fill="#82593d"/>`);
+  }
+  // the seed, until the shoot takes over
+  const seedA = 1 - smoothstep(0.05, 0.16, p);
+  if (seedA > 0.01) {
+    out.push(`<g opacity="${seedA.toFixed(2)}"><ellipse cx="100" cy="${groundY - 3}" rx="9" ry="6" fill="${hsl(35, 45, 38)}" transform="rotate(-18 100 ${groundY - 3})"/>` +
+      `<path d="M96 ${groundY - 5}q4 -3 8 0" stroke="${hsl(35, 40, 55)}" stroke-width="1.4" fill="none"/></g>`);
+  }
+  if (stemLen < 0.5) return wrapSvg(out, defs);
+
+  // stem
+  out.push(`<path d="M100 ${groundY}C${f(100 - g.curl * 14 * curlT)} ${f(groundY - stemLen * 0.4)} ${f(headX + g.curl * 18 * curlT)} ${f(headY + stemLen * 0.45)} ${f(headX)} ${f(headY)}" stroke="${leafD}" stroke-width="${(3 + smoothstep(0.2, 0.6, p)).toFixed(2)}" fill="none" stroke-linecap="round"/>`);
+  const leaf = (x: number, y: number, len: number, side: number, opacity = 1) =>
+    out.push(`<path d="M0 0C${f(len * 0.3)} ${f(-len * 0.45)} ${f(len * 0.85)} ${f(-len * 0.45)} ${f(len)} 0C${f(len * 0.85)} ${f(len * 0.25)} ${f(len * 0.3)} ${f(len * 0.25)} 0 0Z" fill="${leafC}" stroke="${leafD}" stroke-width="0.8" transform="translate(${f(x)} ${f(y)}) scale(${side} 1) rotate(-20)"${opacity < 1 ? ` opacity="${opacity.toFixed(2)}"` : ""}/>`);
+  // seed leaves at the tip of the young shoot, giving way to the true leaves
+  const cotA = smoothstep(0.08, 0.2, p) * (1 - smoothstep(0.36, 0.5, p));
+  if (cotA > 0.01) {
+    const len = 16 * smoothstep(0.08, 0.24, p);
+    leaf(headX, headY + 2, len, 1, cotA);
+    leaf(headX, headY + 2, len, -1, cotA);
+  }
+  // true leaves unfurl one by one as the stem passes them
+  for (let i = 0; i < g.leaves; i++) {
+    const s = smoothstep(0.22 + i * 0.1, 0.4 + i * 0.1, p);
+    if (s < 0.01) continue;
+    const t = 0.25 + i * 0.22;
+    leaf(100 + (headX - 100) * t, groundY - stemLen * t, (26 - i * 3) * s, i % 2 === 0 ? 1 : -1);
+  }
+  // the bud swells, then fades as the head opens
+  const budS = smoothstep(0.42, 0.66, p);
+  const budA = 1 - smoothstep(0.8, 0.95, p);
+  if (budS > 0.01 && budA > 0.01) {
+    out.push(`<g transform="translate(${f(headX)} ${f(headY)}) scale(${budS.toFixed(3)})" opacity="${budA.toFixed(2)}">` +
+      `<path d="M0 6C-13 0 -11 -20 0 -30C11 -20 13 0 0 6Z" fill="${base}" stroke="${deep}" stroke-width="1"/>` +
+      `<path d="M0 6C-9 2 -12 -8 -8 -14L0 -4L8 -14C12 -8 9 2 0 6Z" fill="${leafC}"/></g>`);
+  }
+  // the head opens
+  const openT = smoothstep(0.72, 1, p);
+  if (openT > 0.005) {
+    out.push(renderFlower(g, { ...opts, uid: id + "h", background: undefined, head: { x: headX, y: headY, scale: 0.15 + 0.85 * openT, opacity: smoothstep(0.72, 0.84, p) } }));
+  }
+  return wrapSvg(out, defs);
 }

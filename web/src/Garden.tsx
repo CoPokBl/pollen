@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDraggable, useDropTarget, useDragging, type Payload } from "./drag";
 import { CommissionCard } from "./Commission";
 import { api, useApi, useAction, useNow, useSession, useToast, Flower, Coins, fmtDuration, hintColor, toConsent, Link, Modal } from "./lib";
@@ -6,7 +6,7 @@ import { RarityTag } from "./blooms";
 import type { Genome, Stage } from "../../shared/genome";
 
 interface Plant {
-  genome: Genome | null; hint: { hue: number; sat: number; lum: number }; origin: string; generation: number;
+  genome: Genome | null; hint: { hue: number; sat: number; lum: number; stem?: number; curl?: number; leaves?: number; leafTone?: number }; origin: string; generation: number;
   stage: Stage; progress: number; readyAt: number; growMs: number; waters: number; canWaterAt: number | null;
 }
 interface Seed { id: string; origin: string; generation: number; hint: { hue: number; sat: number; lum: number } }
@@ -22,9 +22,29 @@ interface GardenData {
 
 // A plant whose genome is still hidden is drawn with a neutral stand-in that carries its colour.
 const placeholder = (h: Plant["hint"]): Genome => ({
-  hue: h.hue, hue2: h.hue, sat: h.sat, lum: h.lum, petals: 5, shape: 0, layers: 1, pattern: 0, center: 0,
-  centerHue: 50, stem: 0.5, leaves: 2, curl: 0, glow: false, iridescent: false,
+  hue: h.hue, hue2: h.leafTone ?? h.hue, sat: h.sat, lum: h.lum, petals: 5, shape: 0, layers: 1, pattern: 0, center: 0,
+  centerHue: 50, stem: h.stem ?? 0.5, leaves: h.leaves ?? 2, curl: h.curl ?? 0, glow: false, iridescent: false,
 });
+
+/** Ease a value toward its target every animation frame, so growth never jumps (#18). */
+function useTween(target: number, ms = 900) {
+  const [v, setV] = useState(target);
+  const cur = useRef(target);
+  useEffect(() => {
+    let raf = 0;
+    const from = cur.current, t0 = performance.now();
+    if (Math.abs(target - from) < 0.0005 || matchMedia("(prefers-reduced-motion: reduce)").matches) { cur.current = target; setV(target); return; }
+    const step = (t: number) => {
+      const k = Math.min(1, (t - t0) / ms), e = 1 - (1 - k) ** 3;
+      cur.current = from + (target - from) * e;
+      setV(cur.current);
+      if (k < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [target, ms]);
+  return v;
+}
 const originLabel = (s: { origin: string; generation: number }) =>
   s.origin === "hybrid" ? `Hybrid · gen ${s.generation}` : s.origin === "packet" ? "Premium" : "Wild";
 
@@ -285,6 +305,7 @@ function Plot({ slot, plant, now, busy, picked, fx, onEmptyTap, onSeedDrop, onWa
   </div>;
 
   const progress = ready ? 1 : Math.max(0.03, Math.min(1, 1 - (plant.readyAt - now) / plant.growMs));
+  const shown = useTween(ready ? 1 : Math.max(0, Math.min(0.999, 1 - (plant.readyAt - now) / plant.growMs)));
   const toolUsable = armed === "can" ? canWater : armed === "fertiliser" ? !ready && canFertilise : false;
   const useTool = armed && !ready ? (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest("button")) return;
@@ -293,9 +314,9 @@ function Plot({ slot, plant, now, busy, picked, fx, onEmptyTap, onSeedDrop, onWa
   } : undefined;
   return <div className={"card plot" + (ready ? " ready-glow" : "") + drop.state + (armed ? (toolUsable ? " tool-ok" : " tool-no") : "")} {...drop.props} onClick={useTool}>
     <div className={"art" + (fx?.kind === "plant" ? " pop" : "")} onClick={ready && !busy ? onHarvest : undefined} style={ready ? { cursor: "pointer" } : undefined}>
-      <Flower genome={plant.genome ?? placeholder(plant.hint)} stage={plant.stage} soil animate={ready} uid={"p" + slot} />
+      <Flower genome={plant.genome ?? placeholder(plant.hint)} progress={shown} soil animate={ready} uid={"p" + slot} />
     </div>
-    <div className="label">{ready ? "In bloom!" : `${plant.stage === "seed" ? "Germinating" : plant.stage === "sprout" ? "Sprouting" : "Budding"} · ${fmtDuration(plant.readyAt - now)}`}</div>
+    <div className="label">{ready ? "In bloom!" : `${shown < 0.2 ? "Germinating" : shown < 0.6 ? "Sprouting" : "Budding"} · ${fmtDuration(plant.readyAt - now)}`}</div>
     {!ready && <div className="bar"><i style={{ width: `${progress * 100}%` }} /></div>}
     <div className="acts">
       {ready ? <button className="btn small accent" disabled={busy} onClick={onHarvest}>Harvest</button>
