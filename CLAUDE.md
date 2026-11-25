@@ -22,8 +22,9 @@ job reaches Komodo over Tailscale using repo secrets. `https://pollinate.garden/
 
 ## Working on it
 - `MOCK_SERBLE=1 GROW_SCALE=0.01 npm start` gives a fully local game against an in-memory fake Serble.
-- `npm test`, `npm run typecheck`, and `node test/flow.mjs` (end to end, against a server started with
+- `npm run lint` (React rules-of-hooks via oxlint; it would have caught #19), `npm test`, `npm run typecheck`, and `node test/flow.mjs` (end to end, against a server started with
   `MOCK_SERBLE=1 GROW_SCALE=0.001 PORT=8090`). CI runs all of these and smoke-tests the image on amd64 and arm64.
+- UI changes: also click through them in a real browser session (plant, harvest, etc. in one page, no reloads) and fail on any `pageerror`. API-driven tests missed #19.
 - Usage overview: `curl https://pollinate.garden/api/admin/overview -H "X-Serble-Token: <pollen login token>"`.
 
 ## The project is public
