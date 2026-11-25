@@ -297,6 +297,8 @@ function Plot({ slot, plant, now, busy, picked, fx, onEmptyTap, onSeedDrop, onWa
     {Array.from({ length: fx.kind === "water" ? 9 : 1 }, (_, i) => <i key={i} style={{ ["--i" as any]: i }} />)}
   </div>;
 
+  // Hooks must run on every render, empty plot or not (#19).
+  const shown = useTween(!plant ? 0 : ready ? 1 : Math.max(0, Math.min(0.999, 1 - (plant.readyAt - now) / plant.growMs)));
   if (!plant) return <div className={"card plot empty" + (picked ? " targetable" : "") + drop.state} {...drop.props}
     onClick={onEmptyTap} role="button" tabIndex={0} aria-label={`Empty plot ${slot + 1}`}>
     <div className="art"><Flower genome={placeholder({ hue: 30, sat: 40, lum: 50 })} stage="seed" soil uid={"e" + slot} className="emptyart" /></div>
@@ -305,7 +307,6 @@ function Plot({ slot, plant, now, busy, picked, fx, onEmptyTap, onSeedDrop, onWa
   </div>;
 
   const progress = ready ? 1 : Math.max(0.03, Math.min(1, 1 - (plant.readyAt - now) / plant.growMs));
-  const shown = useTween(ready ? 1 : Math.max(0, Math.min(0.999, 1 - (plant.readyAt - now) / plant.growMs)));
   const toolUsable = armed === "can" ? canWater : armed === "fertiliser" ? !ready && canFertilise : false;
   const useTool = armed && !ready ? (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest("button")) return;
