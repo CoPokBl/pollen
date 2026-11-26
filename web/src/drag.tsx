@@ -18,6 +18,10 @@ const Ctx = createContext<{
   targets: React.MutableRefObject<Map<string, Target>>;
 }>(null!);
 
+/** When set (by the world view), dragging near the screen edges pans this instead of scrolling. */
+let edgePanner: ((dx: number, dy: number) => boolean) | null = null;
+export function setEdgePanner(fn: typeof edgePanner) { edgePanner = fn; }
+
 export function DragProvider({ children }: { children: ReactNode }) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const targets = useRef(new Map<string, Target>());
@@ -61,7 +65,12 @@ export function DragProvider({ children }: { children: ReactNode }) {
       const header = document.querySelector(".top")?.getBoundingClientRect().bottom ?? 0;
       const top = header + 70, bottom = innerHeight - 80;
       const dy = pos.y < top ? -(top - pos.y) / 8 : pos.y > bottom ? (pos.y - bottom) / 8 : 0;
-      if (dy) {
+      if (edgePanner) {
+        // In the world view (#20) the camera pans instead of the page scrolling, sideways too.
+        const dx = pos.x < 70 ? -(70 - pos.x) / 8 : pos.x > innerWidth - 70 ? (pos.x - (innerWidth - 70)) / 8 : 0;
+        if ((dx || dy) && edgePanner(Math.max(-10, Math.min(10, dx)), Math.max(-10, Math.min(10, dy))))
+          setDrag((d) => d && { ...d, over: targetAt(pos.x, pos.y) });
+      } else if (dy) {
         const before = scrollY;
         scrollBy(0, Math.max(-10, Math.min(10, dy)));
         if (scrollY !== before) setDrag((d) => d && { ...d, over: targetAt(pos.x, pos.y) });

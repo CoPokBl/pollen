@@ -5,6 +5,7 @@ import { api, Router, useRouter, Toasts, SessionCtx, Link, Coins, type Me, type 
 import Garden from "./Garden";
 import { DragProvider } from "./drag";
 import Vase from "./Vase";
+import World from "./World";
 import { Landing, Almanac, BloomPage, ProfilePage } from "./Public";
 
 const icons = {
@@ -25,7 +26,7 @@ function Shell() {
   }, []);
 
   const route = path.split("?")[0];
-  const needsUser = route === "/garden" || route === "/vase";
+  const needsUser = route === "/garden" || route === "/vase" || route === "/world";
   let page: React.ReactNode;
   const bloom = /^\/b\/([A-Za-z0-9_-]+)$/.exec(route);
   const profile = /^\/u\/([^/]+)$/.exec(route);
@@ -33,6 +34,7 @@ function Shell() {
   else if (needsUser && me === undefined) page = <div className="wrap section"><span className="spin" /></div>;
   else if (route === "/garden") page = <Garden />;
   else if (route === "/vase") page = <Vase />;
+  else if (route === "/world") page = <World />;
   else if (route === "/almanac") page = <Almanac />;
   else if (bloom) page = <BloomPage id={bloom[1]} />;
   else if (profile) page = <ProfilePage username={(() => { try { return decodeURIComponent(profile[1]); } catch { return profile[1]; } })()} />;
@@ -55,13 +57,13 @@ function Shell() {
       {me ? <button className="btn small ghost" onClick={async () => { await api("/auth/logout", {}); location.href = "/"; }} title={`Signed in as ${me.username}`}>Sign out</button>
         : me === null && <a className="btn small accent" href="/auth/login">Sign in</a>}
     </div></header>
-    <main>{page}</main>
+    <main className={route === "/world" ? "main-world" : undefined}>{page}</main>
     <nav className="bottom-nav">{nav.map(([to, label, icon]) => <Link key={to} to={to} className={route === to ? "on" : ""}>{icon}{label}</Link>)}</nav>
-    <footer className="footer"><div className="wrap row">
+    {route !== "/world" && <footer className="footer"><div className="wrap row">
       <span>Pollen is an unofficial community app built on <a href={config?.serbleWebsite ?? "https://serble.net"}>Serble</a>.</span>
       <span className="spacer" />
       {config?.mock && <span className="pill">mock Serble</span>}
-    </div></footer>
+    </div></footer>}
   </SessionCtx.Provider>;
 }
 

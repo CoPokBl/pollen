@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { notifyChanged, useOnChanged } from "./lib";
 import { api, useApi, useAction, useNow, useSession, useToast, Flower, Coins, Link, Modal, toConsent } from "./lib";
 import { BloomCard, RarityTag, Traits, CENTRES, type Bloom } from "./blooms";
 import { PATTERNS, RARITIES, colorName } from "../../shared/genome";
@@ -37,6 +38,7 @@ function usePref<T extends string>(key: string, fallback: T, allowed: readonly s
 export default function Vase() {
   const { config, refreshBalance } = useSession();
   const { data: vase, reload } = useApi<VaseData>("/api/vase");
+  useOnChanged("vase", reload);
   const { data: gifts, setData: setGifts } = useApi<{ bloomId: string; species: string; sender: string | null }[]>("/api/gifts/new");
   const [giving, setGiving] = useState(false);
   const [giftTo, setGiftTo] = useState("");
@@ -77,7 +79,7 @@ export default function Vase() {
       : `Compost ${list.length} flowers, including ${precious.length} Rare or better? This can't be undone.`)) return;
     const r = await run(() => api<{ composted: number; gained: number }>("/api/compost-blooms", { bloomIds: ids }),
       (r) => `Composted ${r.composted} flower${r.composted > 1 ? "s" : ""} into ${r.gained} fertiliser. Use it in your garden to speed up growth.`);
-    if (r) { setSel([]); setMode("view"); setOpen(null); reload(); }
+    if (r) { setSel([]); setMode("view"); setOpen(null); reload(); notifyChanged("garden"); }
   };
   const feature = async (bloomId: string, slot: number | null) => {
     if (await run(() => api("/api/feature", { bloomId, slot }), slot === null ? undefined : "Featured on your profile.")) reload();
@@ -93,6 +95,7 @@ export default function Vase() {
     setBurst({ id: b, at });
     setTimeout(() => setBurst((x) => (x?.at === at ? null : x)), 1100);
     const r = await run(() => api("/api/pollinate", { a, b }), "A hybrid seed is in your pouch. Plant it to see what grows!");
+    if (r) notifyChanged("garden");
     if (r) { setSel([]); setMode("view"); reload(); }
   };
 

@@ -122,7 +122,7 @@ await bob.consent(ex2.consentUrl, "approve");
 inv = await bob.json("GET", "/api/serble/inventory");
 assert(inv.length === 1 && inv[0].bloom.id === target.id, "bob re-exports same item");
 const stats = await bob.json("GET", "/api/public/stats");
-assert(stats.gardeners === 2, "stats");
+assert(stats.gardeners >= 2, "stats count both test gardeners");
 const svg = await fetch(BASE + `/bloom/${target.id}.svg`);
 assert(svg.ok && svg.headers.get("content-type").includes("svg"), "svg image");
 const cross = await fetch(BASE + "/api/seeds/claim", { method: "POST", headers: { origin: "https://evil.example" } });

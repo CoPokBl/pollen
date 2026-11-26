@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useDraggable, useDropTarget, useDragging, type Payload } from "./drag";
 import { CommissionCard } from "./Commission";
+import { notifyChanged, useOnChanged } from "./lib";
 import { api, useApi, useAction, useNow, useSession, useToast, Flower, Coins, fmtDuration, hintColor, toConsent, Link, Modal } from "./lib";
 import { RarityTag } from "./blooms";
 import type { Genome, Stage } from "../../shared/genome";
@@ -51,6 +52,7 @@ const originLabel = (s: { origin: string; generation: number }) =>
 export default function Garden() {
   const { config, refreshBalance, balance } = useSession();
   const { data, reload, setData } = useApi<GardenData>("/api/garden");
+  useOnChanged("garden", reload);
   const [picked, setPicked] = useState<string | null>(null);
   // Tap a tool to pick it up, then tap plants to use it (an alternative to dragging, #16).
   const [armed, setArmed] = useState<"can" | "fertiliser" | null>(null);
@@ -144,6 +146,7 @@ export default function Garden() {
   };
   const harvest = async (slot: number, genome: Genome) => {
     const r = await run(() => api("/api/harvest", { slot }));
+    if (r) notifyChanged("vase");
     if (r) setHarvested({ ...r, genome });
     reload();
   };
@@ -161,6 +164,7 @@ export default function Garden() {
       }}>Check again</button>
     </div>}
 
+    {!location.pathname.startsWith("/world") && <div className="world-invite"><Link to="/world" className="pill">✨ Try the new world view (beta)</Link></div>}
     <div className="section">
       <div className="section-head">
         <h2>Your garden</h2>
@@ -199,7 +203,7 @@ export default function Garden() {
         </div>}
     </div>
 
-    <div className="section"><CommissionCard compact /></div>
+    <div className="section garden-commission"><CommissionCard compact /></div>
 
     <div className="side section">
       <div className="card pad">

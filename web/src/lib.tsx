@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { renderFlower, type Genome, type Stage } from "../../shared/genome";
 
@@ -131,12 +132,13 @@ export function Modal({ onClose, children, label }: { onClose: () => void; child
     ref.current?.focus();
     return () => removeEventListener("keydown", k);
   }, [onClose]);
-  return <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+  // Portalled to <body> so a dialog opened inside the world view's camera isn't moved or scaled with it.
+  return createPortal(<div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
     <div className="card modal" role="dialog" aria-label={label} tabIndex={-1} ref={ref}>
       <button className="x" onClick={onClose} aria-label="Close">×</button>
       {children}
     </div>
-  </div>;
+  </div>, document.body);
 }
 
 export function Coins({ n }: { n: string | number }) {
@@ -147,3 +149,14 @@ export const hintColor = (h: { hue: number; sat: number; lum: number }) => `hsl(
 
 /** Send the browser to a Serble consent page. */
 export function toConsent(url: string) { location.href = url; }
+
+// Garden and vase can be on screen together (the world view, #20), so a change in one tells the other.
+type Area = "garden" | "vase";
+export const notifyChanged = (what: Area) => dispatchEvent(new CustomEvent("pollen:changed", { detail: what }));
+export function useOnChanged(what: Area, cb: () => void) {
+  useEffect(() => {
+    const h = (e: Event) => { if ((e as CustomEvent).detail === what) cb(); };
+    addEventListener("pollen:changed", h);
+    return () => removeEventListener("pollen:changed", h);
+  }, [what, cb]);
+}
