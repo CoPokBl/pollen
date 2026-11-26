@@ -1,11 +1,11 @@
-import { StrictMode, useCallback, useEffect, useState } from "react";
+import { StrictMode, Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { api, Router, useRouter, Toasts, SessionCtx, Link, Coins, type Me, type AppConfig } from "./lib";
 import Garden from "./Garden";
 import { DragProvider } from "./drag";
 import Vase from "./Vase";
-import World from "./World";
+const PhysicsWorld = lazy(() => import("./PhysicsWorld"));
 import { Landing, Almanac, BloomPage, ProfilePage } from "./Public";
 
 const icons = {
@@ -34,7 +34,7 @@ function Shell() {
   else if (needsUser && me === undefined) page = <div className="wrap section"><span className="spin" /></div>;
   else if (route === "/garden") page = <Garden />;
   else if (route === "/vase") page = <Vase />;
-  else if (route === "/world") page = <World />;
+  else if (route === "/world") page = <Suspense fallback={<div className="wrap section"><span className="spin" /></div>}><PhysicsWorld /></Suspense>;
   else if (route === "/almanac") page = <Almanac />;
   else if (bloom) page = <BloomPage id={bloom[1]} />;
   else if (profile) page = <ProfilePage username={(() => { try { return decodeURIComponent(profile[1]); } catch { return profile[1]; } })()} />;
