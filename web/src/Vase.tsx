@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { notifyChanged, useOnChanged } from "./lib";
 import { api, useApi, useAction, useNow, useSession, useToast, Flower, Coins, Link, Modal, toConsent } from "./lib";
-import { BloomCard, RarityTag, Traits, CENTRES, type Bloom } from "./blooms";
+import { BloomCard, RarityTag, CENTRES, type Bloom } from "./blooms";
+import { BloomDetail } from "./BloomDetail";
 import { PATTERNS, RARITIES, colorName } from "../../shared/genome";
 import { useDraggable, useDropTarget, useDragging, type Payload } from "./drag";
 
@@ -40,8 +41,6 @@ export default function Vase() {
   const { data: vase, reload } = useApi<VaseData>("/api/vase");
   useOnChanged("vase", reload);
   const { data: gifts, setData: setGifts } = useApi<{ bloomId: string; species: string; sender: string | null }[]>("/api/gifts/new");
-  const [giving, setGiving] = useState(false);
-  const [giftTo, setGiftTo] = useState("");
   const blooms = vase?.blooms;
   const [sort, setSort] = usePref<SortKey>("pollen.vase.sort", "newest", Object.keys(SORTS));
   const [group, setGroup] = usePref<GroupKey>("pollen.vase.group", "none", Object.keys(GROUPS));
@@ -158,46 +157,7 @@ export default function Vase() {
 
     {tab === "serble" && <SerbleTab onImported={reload} />}
 
-    {open && <Modal label={open.species} onClose={() => { setOpen(null); setGiving(false); }}>
-      <div className="detail">
-        <div className="art"><Flower genome={open.genome} animate uid={"d" + open.id} /></div>
-        <div>
-          <RarityTag r={open.rarity} />
-          <h2 style={{ marginTop: 8 }}>{open.species}</h2>
-          <Traits g={open.genome} b={open} now={now} />
-          <div className="row">
-            <button className="btn accent" disabled={busy} onClick={async () => {
-              const r = await run(() => api<{ consentUrl: string }>("/api/export", { bloomId: open.id }));
-              if (r) toConsent(r.consentUrl);
-            }}>Send to Serble{config && Number(config.prices.export.coins) > 0 ? <> · <Coins n={config.prices.export.coins} /></> : null}</button>
-            <Link to={`/b/${open.id}`} className="btn ghost">Public page</Link>
-            {open.featuredSlot != null
-              ? <button className="btn ghost" disabled={busy} onClick={() => { feature(open.id, null); setOpen(null); }}>Unfeature</button>
-              : <button className="btn ghost" disabled={busy} onClick={() => {
-                  const used = new Set(inVase.map((b) => b.featuredSlot).filter((x) => x != null));
-                  const free = [0, 1, 2, 3, 4].find((i) => !used.has(i));
-                  if (free === undefined) return toast("All 5 featured slots are full. Drag this flower onto one to swap it in.", true);
-                  feature(open.id, free); setOpen(null);
-                }}>★ Feature</button>}
-          </div>
-          {!giving ? <button className="btn ghost small" style={{ marginTop: 10 }} onClick={() => { setGiving(true); setGiftTo(""); }}>🎁 Gift to a gardener</button>
-            : <form className="gift-form" onSubmit={async (e) => {
-                e.preventDefault();
-                const r = await run(() => api<{ to: string; species: string }>("/api/gift", { bloomId: open.id, to: giftTo }), (r) => `Sent your ${r.species} to ${r.to}.`);
-                if (r) { setGiving(false); setOpen(null); reload(); }
-              }}>
-                <GardenerInput value={giftTo} onChange={setGiftTo} />
-                <button className="btn accent small" disabled={!giftTo.trim() || busy}>Send</button>
-                <button type="button" className="btn ghost small" onClick={() => setGiving(false)}>Cancel</button>
-              </form>}
-          <p className="faint" style={{ marginTop: 10 }}>Sending turns this flower into a Serble item you can sell or trade on the <a href={config?.marketUrl} target="_blank" rel="noreferrer">Market</a>. Whoever holds it can bring it back into their own Pollen garden to breed.</p>
-          <button className="linkish" style={{ fontSize: ".85rem" }} disabled={busy} onClick={() => {
-            if (open.score < 4 && !confirm(`Compost your ${open.species} into ${yieldOf(open)} fertiliser? This can't be undone.`)) return;
-            compost([open.id]);
-          }}>Compost this flower (+{yieldOf(open)} fertiliser)</button>
-        </div>
-      </div>
-    </Modal>}
+    {open && <BloomDetail bloom={open} all={inVase} compostYield={vase?.compostYield ?? {}} onClose={() => setOpen(null)} onChanged={reload} />}
   </div>;
 }
 
@@ -311,12 +271,3 @@ function CrossOdds({ a, b }: { a: string; b: string }) {
   </div>;
 }
 
-/** A username box with suggestions from the gardener search. */
-function GardenerInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const q = value.trim();
-  const { data } = useApi<{ gardeners: { username: string }[] }>(q.length >= 2 ? `/api/public/search?q=${encodeURIComponent(q)}` : null, [q]);
-  return <>
-    <input className="search" list="gardener-names" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Their name" autoFocus aria-label="Gardener to gift to" />
-    <datalist id="gardener-names">{data?.gardeners.map((g) => <option key={g.username} value={g.username} />)}</datalist>
-  </>;
-}

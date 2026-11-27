@@ -6,18 +6,22 @@ import { useEffect, useRef, useState } from "react";
 import { World, Vec2, Box, Circle, Chain, Polygon, MouseJoint, AABB, type Body, type Fixture } from "planck";
 import { api, useApi, useToast, notifyChanged, useOnChanged, Link, fmtDuration, useSession, Coins, toConsent } from "./lib";
 import { renderFlower, type Genome } from "../../shared/genome";
+import { BloomDetail } from "./BloomDetail";
+import type { Bloom } from "./blooms";
 
 // ---------------------------------------------------------------- layout (metres, y up)
-const WORLD_W = 60;
+const WORLD_W = 70;
 const TABLE = { x0: 2, x1: 8.5, top: 2.4 };
 const SACK = { x0: 3.3, x1: 5.9, bottom: TABLE.top + 0.05, top: TABLE.top + 1.8 };
 const HOLE_W = 0.7, HOLE_D = 0.55;
 const holeX = (slot: number) => 15 + slot * 3.6;
-const GREENHOUSE = { x0: 40, x1: 56 };
+const GREENHOUSE = { x0: 40, x1: 64, shelves: [1.4, 2.8], roof: 4.2 };
+const BIN = { x: 37.6, w: 1.0, h: 1.0 };
+const VASE_STEP = 0.62;
 const AREAS = [
   { key: "table", label: "Potting table", x: (TABLE.x0 + TABLE.x1) / 2 + 1 },
   { key: "garden", label: "Garden", x: holeX(2.5) },
-  { key: "greenhouse", label: "Greenhouse", x: (GREENHOUSE.x0 + GREENHOUSE.x1) / 2 },
+  { key: "greenhouse", label: "Greenhouse", x: GREENHOUSE.x0 + 7 },
 ] as const;
 const SEED_R = 0.14;
 const OUT_OF_SACK_MS = 10 * 60_000;
@@ -33,8 +37,9 @@ interface GardenData {
 }
 type Tag =
   | { kind: "ground" } | { kind: "seed"; id: string; color: string; outSince?: number }
-  | { kind: "can" } | { kind: "sackTool" } | { kind: "drop"; born: number; tool: "water" | "fert" }
-  | { kind: "plantSensor"; slot: number } | { kind: "bloom"; genome: Genome; born: number };
+  | { kind: "can" } | { kind: "sackTool" } | { kind: "drop"; born: number; tool: "water" | "fert" | "pollen" }
+  | { kind: "plantSensor"; slot: number } | { kind: "bloom"; genome: Genome; born: number }
+  | { kind: "vase"; id: string; genome: Genome; composting?: boolean };
 
 const placeholder = (h: Plant["hint"]): Genome => ({
   hue: h.hue, hue2: h.leafTone ?? h.hue, sat: h.sat, lum: h.lum, petals: 5, shape: 0, layers: 1, pattern: 0, center: 0,
@@ -70,6 +75,11 @@ export default function PhysicsWorld() {
   const [area, setArea] = useState("garden");
   const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null);
   const engine = useRef<ReturnType<typeof createEngine> | null>(null);
+  const { data: vase, reload: reloadVase } = useApi<{ blooms: Bloom[]; compostYield: Record<string, number> }>("/api/vase");
+  useOnChanged("vase", reloadVase);
+  const vaseRef = useRef<Bloom[]>([]);
+  vaseRef.current = vase?.blooms.filter((b) => b.state === "vase") ?? [];
+  const [open, setOpen] = useState<Bloom | null>(null);
 
   // the physics world lives for the lifetime of the page
   useEffect(() => {
@@ -92,6 +102,24 @@ export default function PhysicsWorld() {
           e.spawnBloom(slot, genome);
         } catch (err) { toast((err as Error).message, true); }
         reload();
+      },
+      tapVase: (id) => { const b = vaseRef.current.find((x) => x.id === id); if (b) setOpen(b); },
+      pollinate: async (a, b) => {
+        try {
+          await api("/api/pollinate", { a, b });
+          toast("Pollen flies! A hybrid seed drops into your sack.");
+          notifyChanged("garden"); reloadVase(); reload();
+          return true;
+        } catch (err) { toast((err as Error).message, true); return false; }
+      },
+      compostVase: async (id) => {
+        const b = vaseRef.current.find((x) => x.id === id);
+        if (!b) return false;
+        if (!confirm(`Compost your ${b.rarity} ${b.species}? This can't be undone.`)) return false;
+        try {
+          const r = await api<{ gained: number }>("/api/compost-blooms", { bloomIds: [id] });
+          toast(`Composted into ${r.gained} fertiliser.`); reloadVase(); reload(); return true;
+        } catch (err) { toast((err as Error).message, true); return false; }
       },
       data: () => dataRef.current,
       now: () => Date.now() - skew.current,
@@ -117,6 +145,9 @@ export default function PhysicsWorld() {
     const t = setTimeout(reload, Math.max(500, next + 300));
     return () => clearTimeout(t);
   }, [data, reload]);
+
+  // keep vase bodies in step with the collection
+  useEffect(() => { if (vase) engine.current?.syncVases(vase.blooms.filter((b) => b.state === "vase")); }, [vase]);
 
   // keep seed bodies in step with the pouch
   useEffect(() => { if (data) engine.current?.syncSeeds(data.seeds); }, [data]);
@@ -149,14 +180,18 @@ export default function PhysicsWorld() {
     <div className="world-viewport physics">
       <canvas ref={canvas} aria-label="Your garden. Drag seeds into holes, hold the watering can over plants, pull blooming flowers up to harvest." />
       {tip && <div className="world-tip" style={{ left: tip.x, top: tip.y }}>{tip.text}</div>}
-      <div className="world-help faint">Drag seeds from the sack into a hole · hold the can over plants · pull a bloom up to harvest · drag empty space to look around</div>
+      <div className="world-help faint">Drag seeds from the sack into a hole · hold the can over plants · pull a bloom up to harvest · in the greenhouse, tap a vase for details, drop one vase onto another to cross-pollinate, drop it in the bin to compost · drag empty space to look around</div>
     </div>
+    {open && <BloomDetail bloom={open} all={vaseRef.current} compostYield={vase?.compostYield ?? {}} onClose={() => setOpen(null)} onChanged={() => { reloadVase(); reload(); }} />}
   </div>;
 }
 
 // ---------------------------------------------------------------- engine
 
 interface Hooks {
+  tapVase: (id: string) => void;
+  pollinate: (a: string, b: string) => Promise<boolean>;
+  compostVase: (id: string) => Promise<boolean>;
   plant: (seedId: string, slot: number) => void;
   water: (slot: number) => void;
   fertilise: (slot: number) => void;
@@ -198,8 +233,11 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
   ground.createFixture(new Box((TABLE.x1 - TABLE.x0) / 2, 0.08, new Vec2((TABLE.x0 + TABLE.x1) / 2, TABLE.top), 0), { friction: 0.7 });
   ground.createFixture(new Chain([new Vec2(SACK.x0 - 0.2, SACK.top), new Vec2(SACK.x0, SACK.bottom + 0.1), new Vec2(SACK.x0 + 0.2, SACK.bottom),
     new Vec2(SACK.x1 - 0.2, SACK.bottom), new Vec2(SACK.x1, SACK.bottom + 0.1), new Vec2(SACK.x1 + 0.2, SACK.top)]), { friction: 0.6 });
-  // greenhouse shelf
-  ground.createFixture(new Box(5, 0.06, new Vec2((GREENHOUSE.x0 + GREENHOUSE.x1) / 2, 1.6), 0));
+  // greenhouse: two shelves above the floor, walls at either end
+  for (const y of GREENHOUSE.shelves) ground.createFixture(new Box((GREENHOUSE.x1 - GREENHOUSE.x0) / 2 - 0.4, 0.06, new Vec2((GREENHOUSE.x0 + GREENHOUSE.x1) / 2, y), 0), { friction: 0.8 });
+  ground.createFixture(new Box(0.08, GREENHOUSE.roof / 2, new Vec2(GREENHOUSE.x1, GREENHOUSE.roof / 2), 0));
+  // the compost bin by the greenhouse door
+  ground.createFixture(new Chain([new Vec2(BIN.x - BIN.w / 2 - 0.08, BIN.h), new Vec2(BIN.x - BIN.w / 2, 0.02), new Vec2(BIN.x + BIN.w / 2, 0.02), new Vec2(BIN.x + BIN.w / 2 + 0.08, BIN.h)]), { friction: 0.6 });
   // plug for occupied holes, so seeds roll over planted plots
   const plugs = new Map<number, Fixture>();
   // sensors where droplets and granules land on plants
@@ -232,6 +270,37 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
     list.forEach((s, i) => { if (!seeds.has(s.id)) spawnSeed(s, i); });
   };
 
+
+  // ---------------------------------------------------------------- vases in the greenhouse
+  const vases = new Map<string, Body>();
+  const LAYOUT_KEY = "pollen.world.vases";
+  const loadLayout = (): Record<string, [number, number]> => { try { return JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}"); } catch { return {}; } };
+  const saveLayout = () => {
+    const out: Record<string, [number, number]> = {};
+    for (const [id, b] of vases) out[id] = [Math.round(b.getPosition().x * 100) / 100, Math.round(b.getPosition().y * 100) / 100];
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(out)); } catch { /* storage unavailable */ }
+  };
+  const freeSpot = (i: number): Vec2 => {
+    const perRow = Math.floor((GREENHOUSE.x1 - GREENHOUSE.x0 - 1.4) / VASE_STEP);
+    const rows = [0, ...GREENHOUSE.shelves];
+    const row = rows[Math.min(rows.length - 1, Math.floor(i / perRow))];
+    return new Vec2(GREENHOUSE.x0 + 0.9 + (i % perRow) * VASE_STEP, row + 0.4 + Math.floor(i / (perRow * rows.length)) * 0.6);
+  };
+  const syncVases = (list: Bloom[]) => {
+    const want = new Set(list.map((b) => b.id));
+    for (const [id, b] of vases) if (!want.has(id)) { world.destroyBody(b); vases.delete(id); }
+    const layout = loadLayout();
+    let i = 0;
+    for (const bl of list) {
+      if (vases.has(bl.id)) continue;
+      const saved = layout[bl.id];
+      const pos = saved ? new Vec2(saved[0], saved[1] + 0.05) : freeSpot(vases.size + i++);
+      const b = world.createDynamicBody({ position: pos, userData: { kind: "vase", id: bl.id, genome: bl.genome } as Tag, angularDamping: 3 });
+      b.createFixture(new Polygon([new Vec2(-0.18, -0.25), new Vec2(0.18, -0.25), new Vec2(0.22, 0.25), new Vec2(-0.22, 0.25)]), { density: 1.5, friction: 0.7, restitution: 0.05 });
+      vases.set(bl.id, b);
+    }
+  };
+
   // ---------------------------------------------------------------- input
   let joint: MouseJoint | null = null;
   let held: Body | null = null;
@@ -240,6 +309,7 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
   const pointers = new Map<number, { x: number; y: number }>();
   let pinch = 0;
   let pourHits = new Set<number>();
+  let holdStart: { at: number; p: Vec2 } | null = null;
 
   const plantAt = (wp: Vec2) => {
     const d = hooks.data();
@@ -278,6 +348,7 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
     const body = bodyAt(wp);
     if (body) {
       held = body;
+      holdStart = { at: performance.now(), p: wp };
       joint = world.createJoint(new MouseJoint({ maxForce: 600 * body.getMass() + 50, frequencyHz: 6, dampingRatio: 0.8 }, ground, body, wp)) as MouseJoint;
       body.setAwake(true);
       pourHits = new Set();
@@ -330,6 +401,22 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
   const up = (e: PointerEvent) => {
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = 0;
+    const b = held, start = holdStart;
+    const tag = b ? tagOf(b) : null;
+    if (b && tag?.kind === "vase" && start) {
+      const p = local(e), wp = toWorld(p.x, p.y);
+      if (performance.now() - start.at < 350 && Vec2.distance(wp, start.p) < 0.15) { releaseHeld(); hooks.tapVase(tag.id); panning = null; pulling = null; return; }
+      // dropped onto another vase: cross-pollinate
+      let other: string | null = null, best = 0.6;
+      for (const [id, v] of vases) if (v !== b) { const d = Vec2.distance(v.getPosition(), b.getPosition()); if (d < best) { best = d; other = id; } }
+      if (other) {
+        burst(b.getPosition());
+        hooks.pollinate(tag.id, other);
+        b.setLinearVelocity(new Vec2(-1.5, 3));   // hop off, so they don't stay stuck together
+      }
+      setTimeout(saveLayout, 1500);
+    }
+    holdStart = null;
     releaseHeld(); panning = null; pulling = null;
   };
   const clampX = (x: number) => Math.max(0, Math.min(WORLD_W, x));
@@ -382,6 +469,7 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
         const d = hooks.data();
         const plant = d?.plots[slot]?.plant;
         if (!plant || plant.stage === "bloom" || pourHits.has(slot)) continue;
+        if (ot.tool === "pollen") continue;
         if (ot.tool === "water") {
           if (plant.canWaterAt === null || plant.canWaterAt > hooks.now()) continue;
           pourHits.add(slot); hooks.water(slot);
@@ -392,6 +480,16 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
       }
     }
   });
+
+  const burst = (at: Vec2) => {
+    const now = performance.now();
+    for (let i = 0; i < 18; i++) {
+      const d = world.createDynamicBody({ position: new Vec2(at.x, at.y + 0.6), bullet: true, gravityScale: 0.25, userData: { kind: "drop", born: now, tool: "pollen" } as Tag });
+      d.createFixture(new Circle(0.035), { density: 0.2, filterGroupIndex: -1, isSensor: true });
+      const a = (i / 18) * Math.PI * 2;
+      d.setLinearVelocity(new Vec2(Math.cos(a) * 2.2, Math.sin(a) * 2.2 + 1));
+    }
+  };
 
   // ---------------------------------------------------------------- loop
   let raf = 0, last = performance.now(), acc = 0;
@@ -429,6 +527,17 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
         if (Date.now() - tag.outSince > OUT_OF_SACK_MS || p.y < -5 || p.x < -3 || p.x > WORLD_W + 3) {
           b.setPosition(new Vec2((SACK.x0 + SACK.x1) / 2, SACK.top + 0.5)); b.setLinearVelocity(new Vec2(0, 0)); tag.outSince = undefined;
         }
+      }
+    }
+    // a vase dropped in the compost bin
+    for (const [, v] of vases) {
+      const t = tagOf(v) as Extract<Tag, { kind: "vase" }>;
+      const p = v.getPosition();
+      if (v !== held && !t.composting && Math.abs(p.x - BIN.x) < BIN.w / 2 && p.y < BIN.h - 0.1) {
+        t.composting = true;
+        hooks.compostVase(t.id).then((ok) => {
+          if (!ok && vases.get(t.id) === v) { v.setPosition(new Vec2(BIN.x + 1.4, 0.6)); v.setLinearVelocity(new Vec2(1.5, 2)); t.composting = false; }
+        });
       }
     }
     // occupied holes get a plug so seeds roll over them
@@ -484,9 +593,16 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
     const ga = toScreen(GREENHOUSE.x0, 0), gb = toScreen(GREENHOUSE.x1, 0), gr = toScreen((GREENHOUSE.x0 + GREENHOUSE.x1) / 2, 5.5);
     ctx.fillStyle = cs.getPropertyValue("--glass") || "rgba(214,238,236,.35)";
     ctx.strokeStyle = cs.getPropertyValue("--frame") || "#9fb9b3"; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(ga.x, ga.y); ctx.lineTo(ga.x, toScreen(0, 3.5).y); ctx.lineTo(gr.x, gr.y); ctx.lineTo(gb.x, toScreen(0, 3.5).y); ctx.lineTo(gb.x, gb.y); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ga.x, ga.y); ctx.lineTo(ga.x, toScreen(0, GREENHOUSE.roof).y); ctx.lineTo(gr.x, gr.y); ctx.lineTo(gb.x, toScreen(0, GREENHOUSE.roof).y); ctx.lineTo(gb.x, gb.y); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.font = "600 15px Nunito, sans-serif"; ctx.fillStyle = cs.getPropertyValue("--ink-2") || "#4c5f53"; ctx.textAlign = "center";
-    ctx.fillText("Greenhouse: your vase moves in here next", gr.x, toScreen(0, 2.6).y);
+    // shelves
+    ctx.fillStyle = "#b98b5e";
+    for (const y of GREENHOUSE.shelves) { const a = toScreen(GREENHOUSE.x0 + 0.4, y + 0.06); ctx.fillRect(a.x, a.y, (GREENHOUSE.x1 - GREENHOUSE.x0 - 0.8) * cam.z, 0.12 * cam.z); }
+    // compost bin
+    const b0 = toScreen(BIN.x - BIN.w / 2 - 0.08, BIN.h), b1 = toScreen(BIN.x + BIN.w / 2 + 0.08, BIN.h), bb = toScreen(BIN.x, 0);
+    ctx.fillStyle = "#6f8f4e"; ctx.strokeStyle = "#3d5a2a"; ctx.lineWidth = 3; ctx.beginPath();
+    ctx.moveTo(b0.x, b0.y); ctx.lineTo(bb.x - BIN.w / 2 * cam.z, bb.y); ctx.lineTo(bb.x + BIN.w / 2 * cam.z, bb.y); ctx.lineTo(b1.x, b1.y); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#d9e8c5"; ctx.font = `800 ${Math.max(9, cam.z * 0.18)}px Nunito, sans-serif`; ctx.fillText("COMPOST", bb.x, bb.y - BIN.h * cam.z * 0.45);
 
     // soil and grass with holes
     ctx.fillStyle = "#7a5236";
@@ -555,8 +671,16 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
         const n = hooks.data()?.fertiliser ?? 0;
         ctx.rotate(b.getAngle()); ctx.fillStyle = "#1f3328"; ctx.font = `800 ${Math.max(10, 0.22 * s)}px Nunito, sans-serif`; ctx.fillText(String(n), 0, -0.5 * s);
       } else if (tg.kind === "drop") {
-        ctx.fillStyle = tg.tool === "water" ? "rgba(111,183,217,.9)" : "#7a5c3a";
+        ctx.fillStyle = tg.tool === "water" ? "rgba(111,183,217,.9)" : tg.tool === "pollen" ? "#f2c14e" : "#7a5c3a";
         ctx.beginPath(); ctx.arc(0, 0, (tg.tool === "water" ? 0.05 : 0.04) * s, 0, Math.PI * 2); ctx.fill();
+      } else if (tg.kind === "vase") {
+        // the flower, standing in the vase's mouth (the SVG's soil line sits at the rim)
+        const img = flowerImage({ ...tg.genome, stem: 0.3, curl: 0.1 }, 1);
+        const fw = 1.1 * s, fh = 1.21 * s;
+        if (img.complete) ctx.drawImage(img, -fw / 2, -0.25 * s - fh * (196 / 220), fw, fh);
+        ctx.fillStyle = "#c98a5f"; ctx.strokeStyle = "#8f5b3a"; ctx.lineWidth = 2; ctx.beginPath();
+        ctx.moveTo(-0.22 * s, -0.25 * s); ctx.lineTo(0.22 * s, -0.25 * s); ctx.lineTo(0.18 * s, 0.25 * s); ctx.lineTo(-0.18 * s, 0.25 * s); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = "rgba(255,255,255,.18)"; ctx.fillRect(-0.15 * s, -0.18 * s, 0.06 * s, 0.32 * s);
       } else if (tg.kind === "bloom") {
         const img = flowerImage(tg.genome, 1);
         if (img.complete) ctx.drawImage(img, -0.7 * s, -0.75 * s, 1.4 * s, 1.55 * s);
@@ -570,10 +694,12 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
     toScreen, holeX, cam,
     seeds: () => [...seeds.entries()].map(([id, b]) => ({ id, x: b.getPosition().x, y: b.getPosition().y })),
     can: () => ({ x: can.getPosition().x, y: can.getPosition().y }),
+    vases: () => [...vases.entries()].map(([id, b]) => ({ id, x: b.getPosition().x, y: b.getPosition().y })),
+    bin: BIN,
   };
 
   return {
-    syncSeeds, goTo, spawnBloom,
+    syncSeeds, syncVases, goTo, spawnBloom,
     destroy() {
       cancelAnimationFrame(raf);
       cv.removeEventListener("pointerdown", down); cv.removeEventListener("pointermove", move);
