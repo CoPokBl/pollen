@@ -15,7 +15,11 @@ const TABLE = { x0: 2, x1: 8.5, top: 2.4 };
 const SACK = { x0: 3.3, x1: 5.9, bottom: TABLE.top + 0.05, top: TABLE.top + 1.8 };
 const HOLE_W = 0.7, HOLE_D = 0.55;
 const holeX = (slot: number) => 15 + slot * 3.6;
-const GREENHOUSE = { x0: 40, x1: 64, shelves: [1.4, 2.8], roof: 4.2 };
+const GREENHOUSE = { x0: 40, x1: 64, shelves: [1.4, 2.8], shelfEnd: 59.2, roof: 4.2 };
+// the show bench at the far end of the greenhouse: one plinth per featured slot on your profile
+const PLINTH = { h: 0.3, w: 0.5 };
+const plinthX = (slot: number) => 59.9 + slot * 0.8;
+const FEATURED_SLOTS = 5;
 const BIN = { x: 37.6, w: 1.0, h: 1.0 };
 const VASE_STEP = 0.62;
 const AREAS = [
@@ -35,11 +39,12 @@ interface GardenData {
   plots: { slot: number; plant: Plant | null }[]; seeds: Seed[];
   freeSeeds: { available: number; nextAt: number | null }; serverNow?: number; fertiliser?: number; fertiliseCost?: number;
 }
+type VaseTag = Extract<Tag, { kind: "vase" }>;
 type Tag =
   | { kind: "ground" } | { kind: "seed"; id: string; color: string; outSince?: number }
   | { kind: "can" } | { kind: "sackTool" } | { kind: "drop"; born: number; tool: "water" | "fert" | "pollen" }
   | { kind: "plantSensor"; slot: number } | { kind: "bloom"; genome: Genome; born: number }
-  | { kind: "vase"; id: string; genome: Genome; composting?: boolean };
+  | { kind: "vase"; id: string; genome: Genome; composting?: boolean; slot: number | null; dropped?: boolean; busy?: boolean };
 
 const placeholder = (h: Plant["hint"]): Genome => ({
   hue: h.hue, hue2: h.leafTone ?? h.hue, sat: h.sat, lum: h.lum, petals: 5, shape: 0, layers: 1, pattern: 0, center: 0,
@@ -121,6 +126,13 @@ export default function PhysicsWorld() {
           toast(`Composted into ${r.gained} fertiliser.`); reloadVase(); reload(); return true;
         } catch (err) { toast((err as Error).message, true); return false; }
       },
+      feature: async (id, slot) => {
+        try {
+          await api("/api/feature", { bloomId: id, slot });
+          toast(slot === null ? "Taken off your profile's show bench." : "On the show bench: featured on your profile.");
+          reloadVase(); return true;
+        } catch (err) { toast((err as Error).message, true); reloadVase(); return false; }
+      },
       data: () => dataRef.current,
       now: () => Date.now() - skew.current,
       onArea: setArea,
@@ -180,7 +192,7 @@ export default function PhysicsWorld() {
     <div className="world-viewport physics">
       <canvas ref={canvas} aria-label="Your garden. Drag seeds into holes, hold the watering can over plants, pull blooming flowers up to harvest." />
       {tip && <div className="world-tip" style={{ left: tip.x, top: tip.y }}>{tip.text}</div>}
-      <div className="world-help faint">Drag seeds from the sack into a hole · hold the can over plants · pull a bloom up to harvest · in the greenhouse, tap a vase for details, drop one vase onto another to cross-pollinate, drop it in the bin to compost · drag empty space to look around</div>
+      <div className="world-help faint">Drag seeds from the sack into a hole · hold the can over plants · pull a bloom up to harvest · in the greenhouse, tap a vase for details, drop one vase onto another to cross-pollinate, drop it in the bin to compost, stand it on the show bench to feature it on your profile · drag empty space to look around</div>
     </div>
     {open && <BloomDetail bloom={open} all={vaseRef.current} compostYield={vase?.compostYield ?? {}} onClose={() => setOpen(null)} onChanged={() => { reloadVase(); reload(); }} />}
   </div>;
@@ -192,6 +204,7 @@ interface Hooks {
   tapVase: (id: string) => void;
   pollinate: (a: string, b: string) => Promise<boolean>;
   compostVase: (id: string) => Promise<boolean>;
+  feature: (id: string, slot: number | null) => Promise<boolean>;
   plant: (seedId: string, slot: number) => void;
   water: (slot: number) => void;
   fertilise: (slot: number) => void;
@@ -234,7 +247,8 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
   ground.createFixture(new Chain([new Vec2(SACK.x0 - 0.2, SACK.top), new Vec2(SACK.x0, SACK.bottom + 0.1), new Vec2(SACK.x0 + 0.2, SACK.bottom),
     new Vec2(SACK.x1 - 0.2, SACK.bottom), new Vec2(SACK.x1, SACK.bottom + 0.1), new Vec2(SACK.x1 + 0.2, SACK.top)]), { friction: 0.6 });
   // greenhouse: two shelves above the floor, walls at either end
-  for (const y of GREENHOUSE.shelves) ground.createFixture(new Box((GREENHOUSE.x1 - GREENHOUSE.x0) / 2 - 0.4, 0.06, new Vec2((GREENHOUSE.x0 + GREENHOUSE.x1) / 2, y), 0), { friction: 0.8 });
+  for (const y of GREENHOUSE.shelves) ground.createFixture(new Box((GREENHOUSE.shelfEnd - GREENHOUSE.x0) / 2 - 0.4, 0.06, new Vec2((GREENHOUSE.x0 + GREENHOUSE.shelfEnd) / 2, y), 0), { friction: 0.8 });
+  for (let i = 0; i < FEATURED_SLOTS; i++) ground.createFixture(new Box(PLINTH.w / 2, PLINTH.h / 2, new Vec2(plinthX(i), PLINTH.h / 2), 0), { friction: 0.9 });
   ground.createFixture(new Box(0.08, GREENHOUSE.roof / 2, new Vec2(GREENHOUSE.x1, GREENHOUSE.roof / 2), 0));
   // the compost bin by the greenhouse door
   ground.createFixture(new Chain([new Vec2(BIN.x - BIN.w / 2 - 0.08, BIN.h), new Vec2(BIN.x - BIN.w / 2, 0.02), new Vec2(BIN.x + BIN.w / 2, 0.02), new Vec2(BIN.x + BIN.w / 2 + 0.08, BIN.h)]), { friction: 0.6 });
@@ -281,10 +295,16 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
     try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(out)); } catch { /* storage unavailable */ }
   };
   const freeSpot = (i: number): Vec2 => {
-    const perRow = Math.floor((GREENHOUSE.x1 - GREENHOUSE.x0 - 1.4) / VASE_STEP);
+    const perRow = Math.floor((GREENHOUSE.shelfEnd - GREENHOUSE.x0 - 1.4) / VASE_STEP);
     const rows = [0, ...GREENHOUSE.shelves];
     const row = rows[Math.min(rows.length - 1, Math.floor(i / perRow))];
     return new Vec2(GREENHOUSE.x0 + 0.9 + (i % perRow) * VASE_STEP, row + 0.4 + Math.floor(i / (perRow * rows.length)) * 0.6);
+  };
+  const onPlinth = (slot: number) => new Vec2(plinthX(slot), PLINTH.h + 0.3);
+  /** Which plinth a resting vase stands on, if any. */
+  const plinthUnder = (p: Vec2) => {
+    for (let i = 0; i < FEATURED_SLOTS; i++) if (Math.abs(p.x - plinthX(i)) < 0.32 && p.y > PLINTH.h + 0.1 && p.y < PLINTH.h + 1.2) return i;
+    return null;
   };
   const syncVases = (list: Bloom[]) => {
     const want = new Set(list.map((b) => b.id));
@@ -292,10 +312,12 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
     const layout = loadLayout();
     let i = 0;
     for (const bl of list) {
-      if (vases.has(bl.id)) continue;
+      const slot = bl.featuredSlot ?? null;
+      const have = vases.get(bl.id);
+      if (have) { const t = tagOf(have) as VaseTag; if (!t.busy) t.slot = slot; continue; }
       const saved = layout[bl.id];
-      const pos = saved ? new Vec2(saved[0], saved[1] + 0.05) : freeSpot(vases.size + i++);
-      const b = world.createDynamicBody({ position: pos, userData: { kind: "vase", id: bl.id, genome: bl.genome } as Tag, angularDamping: 3 });
+      const pos = slot !== null ? onPlinth(slot) : saved ? new Vec2(saved[0], saved[1] + 0.05) : freeSpot(vases.size + i++);
+      const b = world.createDynamicBody({ position: pos, userData: { kind: "vase", id: bl.id, genome: bl.genome, slot } as Tag, angularDamping: 3 });
       b.createFixture(new Polygon([new Vec2(-0.18, -0.25), new Vec2(0.18, -0.25), new Vec2(0.22, 0.25), new Vec2(-0.22, 0.25)]), { density: 1.5, friction: 0.7, restitution: 0.05 });
       vases.set(bl.id, b);
     }
@@ -414,6 +436,7 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
         hooks.pollinate(tag.id, other);
         b.setLinearVelocity(new Vec2(-1.5, 3));   // hop off, so they don't stay stuck together
       }
+      tag.dropped = true;
       setTimeout(saveLayout, 1500);
     }
     holdStart = null;
@@ -540,6 +563,30 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
         });
       }
     }
+    // the show bench: a vase the gardener sets on a plinth is featured there, and taking it off
+    // unfeatures it. Changes made elsewhere (the details dialog, a swap) move the vases to match.
+    for (const [, v] of vases) {
+      const t = tagOf(v) as VaseTag;
+      if (v === held || t.busy || t.composting || v.getLinearVelocity().length() > 0.05) continue;
+      const on = plinthUnder(v.getPosition());
+      if (on === t.slot) { t.dropped = false; continue; }
+      if (t.dropped) {
+        t.dropped = false;
+        if (on === null && t.slot !== null && Vec2.distance(v.getPosition(), onPlinth(t.slot)) < 0.4) continue;
+        t.busy = true;
+        const want = on;
+        hooks.feature(t.id, want).then((ok) => { t.busy = false; if (ok) t.slot = want; });
+      } else if (t.slot !== null) {
+        // featured, but not on its plinth: put it there, nudging off whatever stands on it
+        for (const [, o] of vases) if (o !== v && plinthUnder(o.getPosition()) === t.slot) { o.setPosition(new Vec2(GREENHOUSE.shelfEnd - 0.3, 0.6)); o.setLinearVelocity(new Vec2(-1.5, 1)); }
+        v.setPosition(onPlinth(t.slot)); v.setAngle(0); v.setLinearVelocity(new Vec2(0, 0)); v.setAwake(true);
+        setTimeout(saveLayout, 1500);
+      } else if (on !== null) {
+        // not featured any more (unfeatured from the dialog, or swapped out): step off the bench
+        v.setPosition(new Vec2(GREENHOUSE.shelfEnd - 0.3, 0.6)); v.setLinearVelocity(new Vec2(-1.5, 1));
+        setTimeout(saveLayout, 1500);
+      }
+    }
     // occupied holes get a plug so seeds roll over them
     if (d) for (let s = 0; s < 6; s++) {
       const occupied = !!d.plots[s]?.plant;
@@ -597,7 +644,19 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
     ctx.font = "600 15px Nunito, sans-serif"; ctx.fillStyle = cs.getPropertyValue("--ink-2") || "#4c5f53"; ctx.textAlign = "center";
     // shelves
     ctx.fillStyle = "#b98b5e";
-    for (const y of GREENHOUSE.shelves) { const a = toScreen(GREENHOUSE.x0 + 0.4, y + 0.06); ctx.fillRect(a.x, a.y, (GREENHOUSE.x1 - GREENHOUSE.x0 - 0.8) * cam.z, 0.12 * cam.z); }
+    for (const y of GREENHOUSE.shelves) { const a = toScreen(GREENHOUSE.x0 + 0.4, y + 0.06); ctx.fillRect(a.x, a.y, (GREENHOUSE.shelfEnd - GREENHOUSE.x0 - 0.8) * cam.z, 0.12 * cam.z); }
+    // show bench: plinths with a star, and a sign
+    for (let i = 0; i < FEATURED_SLOTS; i++) {
+      const a = toScreen(plinthX(i) - PLINTH.w / 2, PLINTH.h);
+      ctx.fillStyle = "#d9d3c4"; ctx.strokeStyle = "#a59c88"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.rect(a.x, a.y, PLINTH.w * cam.z, PLINTH.h * cam.z); ctx.fill(); ctx.stroke();
+      const c = toScreen(plinthX(i), PLINTH.h / 2);
+      ctx.fillStyle = "#e0a93b"; ctx.font = `800 ${Math.max(8, cam.z * 0.2)}px Nunito, sans-serif`; ctx.textBaseline = "middle"; ctx.fillText("★", c.x, c.y); ctx.textBaseline = "alphabetic";
+    }
+    const sign = toScreen((plinthX(0) + plinthX(FEATURED_SLOTS - 1)) / 2, 2.55);
+    ctx.fillStyle = "#b98b5e"; ctx.fillRect(sign.x - 1.7 * cam.z, sign.y - 0.28 * cam.z, 3.4 * cam.z, 0.5 * cam.z);
+    ctx.fillStyle = "#fff8ea"; ctx.font = `800 ${Math.max(9, cam.z * 0.17)}px Nunito, sans-serif`; ctx.fillText("SHOW BENCH", sign.x, sign.y - 0.02 * cam.z);
+    ctx.font = `600 ${Math.max(8, cam.z * 0.12)}px Nunito, sans-serif`; ctx.fillText("featured on your profile", sign.x, sign.y + 0.15 * cam.z);
     // compost bin
     const b0 = toScreen(BIN.x - BIN.w / 2 - 0.08, BIN.h), b1 = toScreen(BIN.x + BIN.w / 2 + 0.08, BIN.h), bb = toScreen(BIN.x, 0);
     ctx.fillStyle = "#6f8f4e"; ctx.strokeStyle = "#3d5a2a"; ctx.lineWidth = 3; ctx.beginPath();
@@ -694,7 +753,8 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
     toScreen, holeX, cam,
     seeds: () => [...seeds.entries()].map(([id, b]) => ({ id, x: b.getPosition().x, y: b.getPosition().y })),
     can: () => ({ x: can.getPosition().x, y: can.getPosition().y }),
-    vases: () => [...vases.entries()].map(([id, b]) => ({ id, x: b.getPosition().x, y: b.getPosition().y })),
+    vases: () => [...vases.entries()].map(([id, b]) => ({ id, x: b.getPosition().x, y: b.getPosition().y, slot: (tagOf(b) as VaseTag).slot })),
+    plinthX,
     bin: BIN,
   };
 
