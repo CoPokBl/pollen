@@ -4,10 +4,11 @@
 // flower up to harvest it. Everything else falls, rolls, bounces and stacks.
 import { useEffect, useRef, useState } from "react";
 import { World, Vec2, Box, Circle, Chain, Polygon, MouseJoint, AABB, type Body, type Fixture } from "planck";
-import { api, useApi, useToast, notifyChanged, useOnChanged, Link, fmtDuration, useSession, Coins, toConsent } from "./lib";
+import { api, useApi, useToast, notifyChanged, useOnChanged, Link, fmtDuration, useSession, Coins, toConsent, Modal } from "./lib";
 import { renderFlower, type Genome } from "../../shared/genome";
 import { BloomDetail } from "./BloomDetail";
 import type { Bloom } from "./blooms";
+import { CommissionCard, commissionTarget, PLACES, type CommissionData } from "./Commission";
 
 // ---------------------------------------------------------------- layout (metres, y up)
 const WORLD_W = 70;
@@ -21,6 +22,9 @@ const PLINTH = { h: 0.3, w: 0.5 };
 const plinthX = (slot: number) => 59.9 + slot * 0.8;
 const FEATURED_SLOTS = 5;
 const BIN = { x: 37.6, w: 1.0, h: 1.0 };
+// the commission notice board, on a post between the garden and the greenhouse
+const BOARD = { x0: 34.0, x1: 36.6, y0: 1.4, y1: 3.2 };
+const onBoard = (p: { x: number; y: number }, pad = 0) => p.x > BOARD.x0 - pad && p.x < BOARD.x1 + pad && p.y > BOARD.y0 - pad && p.y < BOARD.y1 + pad;
 const VASE_STEP = 0.62;
 const AREAS = [
   { key: "table", label: "Potting table", x: (TABLE.x0 + TABLE.x1) / 2 + 1 },
@@ -85,6 +89,11 @@ export default function PhysicsWorld() {
   const vaseRef = useRef<Bloom[]>([]);
   vaseRef.current = vase?.blooms.filter((b) => b.state === "vase") ?? [];
   const [open, setOpen] = useState<Bloom | null>(null);
+  const { data: commission, reload: reloadCommission } = useApi<CommissionData>("/api/commission");
+  const commissionRef = useRef<CommissionData | null>(null);
+  commissionRef.current = commission;
+  const [board, setBoard] = useState(false);
+  useEffect(() => { if (vase) reloadCommission(); }, [vase, reloadCommission]);   // new flowers may qualify
 
   // the physics world lives for the lifetime of the page
   useEffect(() => {
@@ -132,6 +141,24 @@ export default function PhysicsWorld() {
           toast(slot === null ? "Taken off your profile's show bench." : "On the show bench: featured on your profile.");
           reloadVase(); return true;
         } catch (err) { toast((err as Error).message, true); reloadVase(); return false; }
+      },
+      openCommission: () => setBoard(true),
+      handIn: async (id) => {
+        const c = commissionRef.current, b = vaseRef.current.find((x) => x.id === id);
+        if (!c || !b) return;
+        if (c.mine) return toast(`You've already completed this week's commission (${PLACES[c.mine.place - 1] ?? `#${c.mine.place}`}).`);
+        if (!c.eligible.includes(id)) return toast(`That one doesn't qualify. "${c.title}" needs ${c.requirements.map((q) => q.label).join(", ")}, grown by you this week.`, true);
+        if (!confirm(`Hand in your ${b.species} for this week's commission? You keep the flower.`)) return;
+        try {
+          const r = await api<{ place: number; reward: string; status: string }>("/api/commission/claim", { bloomId: id });
+          toast(r.reward !== "0" ? `Commission complete! ${PLACES[r.place - 1]} place: ${r.reward} coins ${r.status === "paid" ? "sent to your Serble balance" : "coming soon"}.` : "Commission complete!");
+          refreshBalance();
+        } catch (err) { toast((err as Error).message, true); }
+        reloadCommission();
+      },
+      commission: () => {
+        const c = commissionRef.current;
+        return c && { title: c.title, target: commissionTarget(c), left: c.end - Date.now(), done: !!c.mine, ready: c.eligible.length };
       },
       data: () => dataRef.current,
       now: () => Date.now() - skew.current,
@@ -192,8 +219,9 @@ export default function PhysicsWorld() {
     <div className="world-viewport physics">
       <canvas ref={canvas} aria-label="Your garden. Drag seeds into holes, hold the watering can over plants, pull blooming flowers up to harvest." />
       {tip && <div className="world-tip" style={{ left: tip.x, top: tip.y }}>{tip.text}</div>}
-      <div className="world-help faint">Drag seeds from the sack into a hole · hold the can over plants · pull a bloom up to harvest · in the greenhouse, tap a vase for details, drop one vase onto another to cross-pollinate, drop it in the bin to compost, stand it on the show bench to feature it on your profile · drag empty space to look around</div>
+      <div className="world-help faint">Drag seeds from the sack into a hole · hold the can over plants · pull a bloom up to harvest · in the greenhouse, tap a vase for details, drop one vase onto another to cross-pollinate, drop it in the bin to compost, hold it against the notice board to hand it in for the commission, stand it on the show bench to feature it on your profile · drag empty space to look around</div>
     </div>
+    {board && <Modal label="Weekly commission" onClose={() => { setBoard(false); reloadCommission(); }}><CommissionCard /></Modal>}
     {open && <BloomDetail bloom={open} all={vaseRef.current} compostYield={vase?.compostYield ?? {}} onClose={() => setOpen(null)} onChanged={() => { reloadVase(); reload(); }} />}
   </div>;
 }
@@ -205,6 +233,9 @@ interface Hooks {
   pollinate: (a: string, b: string) => Promise<boolean>;
   compostVase: (id: string) => Promise<boolean>;
   feature: (id: string, slot: number | null) => Promise<boolean>;
+  openCommission: () => void;
+  handIn: (id: string) => void;
+  commission: () => { title: string; target: Genome; left: number; done: boolean; ready: number } | null;
   plant: (seedId: string, slot: number) => void;
   water: (slot: number) => void;
   fertilise: (slot: number) => void;
@@ -332,6 +363,7 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
   let pinch = 0;
   let pourHits = new Set<number>();
   let holdStart: { at: number; p: Vec2 } | null = null;
+  let boardTap: { at: number; x: number; y: number } | null = null;
 
   const plantAt = (wp: Vec2) => {
     const d = hooks.data();
@@ -382,6 +414,7 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
     const pl = plantAt(wp);
     if (pl && pl.progress >= 1 && pl.plant.genome) { pulling = { slot: pl.slot, startY: wp.y, genome: pl.plant.genome }; return; }
     panning = { sx: p.x, sy: p.y, cx: cam.x, cy: cam.y };
+    boardTap = onBoard(wp) ? { at: performance.now(), x: p.x, y: p.y } : null;
   };
   const move = (e: PointerEvent) => {
     const p = local(e);
@@ -428,6 +461,8 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
     if (b && tag?.kind === "vase" && start) {
       const p = local(e), wp = toWorld(p.x, p.y);
       if (performance.now() - start.at < 350 && Vec2.distance(wp, start.p) < 0.15) { releaseHeld(); hooks.tapVase(tag.id); panning = null; pulling = null; return; }
+      // held up against the notice board: hand it in for the commission
+      if (onBoard(b.getPosition(), 0.15)) { releaseHeld(); holdStart = null; b.setLinearVelocity(new Vec2(0, 0)); hooks.handIn(tag.id); setTimeout(saveLayout, 1500); return; }
       // dropped onto another vase: cross-pollinate
       let other: string | null = null, best = 0.6;
       for (const [id, v] of vases) if (v !== b) { const d = Vec2.distance(v.getPosition(), b.getPosition()); if (d < best) { best = d; other = id; } }
@@ -439,7 +474,11 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
       tag.dropped = true;
       setTimeout(saveLayout, 1500);
     }
-    holdStart = null;
+    if (boardTap && panning) {
+      const p = local(e);
+      if (performance.now() - boardTap.at < 400 && Math.hypot(p.x - boardTap.x, p.y - boardTap.y) < 8) hooks.openCommission();
+    }
+    boardTap = null; holdStart = null;
     releaseHeld(); panning = null; pulling = null;
   };
   const clampX = (x: number) => Math.max(0, Math.min(WORLD_W, x));
@@ -662,6 +701,32 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
     ctx.fillStyle = "#6f8f4e"; ctx.strokeStyle = "#3d5a2a"; ctx.lineWidth = 3; ctx.beginPath();
     ctx.moveTo(b0.x, b0.y); ctx.lineTo(bb.x - BIN.w / 2 * cam.z, bb.y); ctx.lineTo(bb.x + BIN.w / 2 * cam.z, bb.y); ctx.lineTo(b1.x, b1.y); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.fillStyle = "#d9e8c5"; ctx.font = `800 ${Math.max(9, cam.z * 0.18)}px Nunito, sans-serif`; ctx.fillText("COMPOST", bb.x, bb.y - BIN.h * cam.z * 0.45);
+    // commission notice board
+    {
+      const s = cam.z, tl = toScreen(BOARD.x0, BOARD.y1), post = toScreen((BOARD.x0 + BOARD.x1) / 2 - 0.06, BOARD.y0);
+      const bw = (BOARD.x1 - BOARD.x0) * s, bh = (BOARD.y1 - BOARD.y0) * s, cx = tl.x + bw / 2;
+      ctx.fillStyle = "#8f6a45"; ctx.fillRect(post.x, post.y, 0.12 * s, BOARD.y0 * s);
+      ctx.fillStyle = "#c9a06b"; ctx.strokeStyle = "#7a5636"; ctx.lineWidth = Math.max(2, 0.06 * s);
+      ctx.beginPath(); ctx.roundRect(tl.x, tl.y, bw, bh, 0.06 * s); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#fff8ea"; ctx.fillRect(tl.x + 0.1 * s, tl.y + 0.1 * s, bw - 0.2 * s, bh - 0.2 * s);
+      const c = hooks.commission();
+      ctx.fillStyle = "#7a5636"; ctx.font = `800 ${Math.max(8, s * 0.14)}px Nunito, sans-serif`;
+      ctx.fillText("WEEKLY COMMISSION", cx, tl.y + 0.3 * s);
+      if (c) {
+        const img = flowerImage(c.target, 1), fw = 0.95 * s;
+        if (img.complete) ctx.drawImage(img, cx - fw / 2, tl.y + 0.32 * s, fw, fw * 1.1);
+        ctx.fillStyle = "#2c3b31"; ctx.font = `700 ${Math.max(8, s * 0.14)}px Nunito, sans-serif`;
+        const title = c.title.length > 30 ? c.title.slice(0, 29) + "…" : c.title;
+        ctx.fillText(title, cx, tl.y + bh - 0.38 * s);
+        ctx.fillStyle = "#6b7a70"; ctx.font = `600 ${Math.max(7, s * 0.115)}px Nunito, sans-serif`;
+        ctx.fillText(c.done ? "✓ you completed it" : c.ready ? `${c.ready} of yours qualif${c.ready === 1 ? "ies" : "y"}: hold one here` : `${fmtDuration(c.left)} left · tap to read`, cx, tl.y + bh - 0.2 * s);
+        if (c.ready && !c.done) {
+          ctx.fillStyle = "#e0a93b"; ctx.beginPath(); ctx.arc(tl.x + bw - 0.05 * s, tl.y + 0.05 * s, 0.16 * s, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "#fff"; ctx.font = `900 ${Math.max(8, s * 0.2)}px Nunito, sans-serif`; ctx.textBaseline = "middle"; ctx.fillText("!", tl.x + bw - 0.05 * s, tl.y + 0.06 * s); ctx.textBaseline = "alphabetic";
+        }
+      }
+      ctx.fillStyle = "#c0392b"; ctx.beginPath(); ctx.arc(cx, tl.y + 0.06 * s, 0.05 * s, 0, Math.PI * 2); ctx.fill();
+    }
 
     // soil and grass with holes
     ctx.fillStyle = "#7a5236";
@@ -754,7 +819,7 @@ function createEngine(cv: HTMLCanvasElement, hooks: Hooks) {
     seeds: () => [...seeds.entries()].map(([id, b]) => ({ id, x: b.getPosition().x, y: b.getPosition().y })),
     can: () => ({ x: can.getPosition().x, y: can.getPosition().y }),
     vases: () => [...vases.entries()].map(([id, b]) => ({ id, x: b.getPosition().x, y: b.getPosition().y, slot: (tagOf(b) as VaseTag).slot })),
-    plinthX,
+    plinthX, board: BOARD,
     bin: BIN,
   };
 

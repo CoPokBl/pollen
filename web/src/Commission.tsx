@@ -4,14 +4,16 @@ import { api, useApi, useAction, useNow, useSession, Flower, Coins, Link, fmtDur
 import { exampleGenome, breedingTip, type Requirement } from "../../shared/commission";
 import { wildGenome, mulberry32, type Genome } from "../../shared/genome";
 
-interface CommissionData {
+export interface CommissionData {
   week: number; start: number; end: number; title: string; requirements: Requirement[]; rewards: string[];
   claims: { place: number; username: string; bloomId: string; genome: Genome; reward: string; status: string }[];
   mine: { place: number; status: string } | null;
   eligible: string[];
 }
 
-const PLACES = ["1st", "2nd", "3rd"];
+export const PLACES = ["1st", "2nd", "3rd"];
+/** A flower that would satisfy this week's commission, for pictures of the target. */
+export const commissionTarget = (c: CommissionData): Genome => ({ ...exampleGenome(c, wildGenome(mulberry32(c.week * 31 + 7), 1)), stem: 0.35, curl: 0.1 });
 
 export function CommissionCard({ compact }: { compact?: boolean }) {
   const { me, refreshBalance } = useSession();
@@ -22,7 +24,7 @@ export function CommissionCard({ compact }: { compact?: boolean }) {
   if (!c) return null;
   // Head-cropped art assumes a standard stem, so normalise it for these small pictures.
   const framed = (g: Genome): Genome => ({ ...g, stem: 0.35, curl: 0.1 });
-  const target = framed(exampleGenome(c, wildGenome(mulberry32(c.week * 31 + 7), 1)));
+  const target = commissionTarget(c);
   const left = c.end - now;
   const prizesLeft = Math.max(0, c.rewards.length - c.claims.length);
   return <section className="card pad commission" aria-label="Weekly commission">
